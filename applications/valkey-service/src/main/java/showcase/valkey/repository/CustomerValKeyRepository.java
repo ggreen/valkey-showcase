@@ -17,7 +17,7 @@ import java.util.Optional;
 
 
 @Repository
-public class CustomerValKeyRepository implements CrudRepository<Customer,String> {
+public class CustomerValKeyRepository implements CustomerRepository {
     private final JedisPool valkeyPool;
     private final ObjectMapper objectMapper;
     private static final String prefix = "customer-";
