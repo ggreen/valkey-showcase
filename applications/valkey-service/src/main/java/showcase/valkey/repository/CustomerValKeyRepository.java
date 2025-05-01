@@ -43,7 +43,6 @@ public class CustomerValKeyRepository implements CrudRepository<Customer,String>
         try(var valkey = valkeyPool.getResource())
         {
             valkey.set(toKey(customer.id()),objectMapper.writeValueAsString(customer));
-
         }
         return customer;
     }

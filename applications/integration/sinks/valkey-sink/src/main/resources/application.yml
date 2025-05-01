@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: valkey-sink
+  config:
+    import: "optional:configserver:http://localhost:8888/"
+  cloud:
+    function:
+      definition: valKeyConsumer
+    stream:
+      function:
+        bindings:
+          valKeyConsumer-in-0: input
+      binder:
+        connection-name-prefix: ${spring.application.name}

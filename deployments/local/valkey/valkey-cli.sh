@@ -1,0 +1,1 @@
+podman exec -it  valkey valkey-cli
