@@ -87,8 +87,8 @@ class CustomerValKeyRepositoryTest {
         var expected = Customer.builder()
                 .id(customer.id())
                 .email(customer.email())
-                .firstName(customer.firstName()+"UPDATED")
-                .lastName(customer.lastName()+"UPDATED")
+                .firstName(customer.first_name()+"UPDATED")
+                .lastName(customer.last_name()+"UPDATED")
                 .build();
 
         subject.save(expected);
