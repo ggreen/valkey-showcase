@@ -11,6 +11,7 @@
     <name>spring-gemfire-showcase-parent</name>
 
     <modules>
+        <module>applications/integration/sources/valkey-sql-cdc-source</module>
         <module>applications/valkey-service</module>
         <module>applications/customer-service</module>
         <module>applications/integration/sinks/valkey-sink</module>
