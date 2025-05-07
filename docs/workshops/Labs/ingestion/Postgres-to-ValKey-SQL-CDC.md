@@ -7,7 +7,7 @@ See the Spring documentation for other [CDC examples](https://spring.io/blog/202
 This example will use the [Spring Cloud Stream Application Debezium CDC source](https://docs.spring.io/stream-applications/docs/current/reference/html/#spring-cloud-stream-modules-debezium-source)
 to capture database changes from PostgreSQL in real-time and send to [ValKey](https://valkey.io/) using [RabbitMQ](http://rabbbitmq.com).
 
-![cdc-valkey-architecture.png](img/cdc-valkey-architecture.png)
+![postgres-valkey-custom-architecture.png](img/postgres-valkey-custom-architecture.png)
 
 This example will sync inventory customer changes in Postgres to ValKey.
 
