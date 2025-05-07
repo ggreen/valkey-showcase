@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -23,6 +24,7 @@ public class AmqpConsumerPublisher implements Consumer<String> {
 
         template.send(MessageBuilder.
                 withBody(payload.getBytes(StandardCharsets.UTF_8))
+                        .setContentType(MediaType.APPLICATION_JSON_VALUE)
                 .build());
 
         log.info("Sent");

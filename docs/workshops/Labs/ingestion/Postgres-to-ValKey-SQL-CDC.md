@@ -40,6 +40,16 @@ Run the following to Start a ValKey
 
 Open [SCDF dashboard](http://localhost:9393/dashboard)
 
+
+Register Spring Cloud DataFlow
+
+```properties
+source.valkey-sql-cdc=file:///Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/applications/integration/sources/valkey-sql-cdc-source/target/valkey-sql-cdc-source-0.0.1-SNAPSHOT.jar
+source.valkey-sql-cdc.bootVersion=3
+#sink.valkey-sink.metadata=file:///Users/Projects/VMware/Tanzu/TanzuData/TanzuRabbitMQ/dev/tanzu-rabbitmq-event-streaming-showcase/applications/sinks/jdbc-upsert/target/jdbc-upsert-0.2.0-SNAPSHOT-metadata.jar
+```
+
+
 ```shell
 open http://localhost:9393/dashboard
 ```
@@ -49,44 +59,13 @@ open http://localhost:9393/dashboard
 With the following definition
 
 ```shell
-postgres-to-valkey-jdbc=cdc-debezium --cdc.name=postgres-connector --cdc.config.database.dbname=postgres --connector=postgres --cdc.config.database.server.name=my-app-connector --cdc.config.database.user=postgres --cdc.config.database.password=postgres --cdc.config.database.hostname=localhost --cdc.config.database.port=5432 --cdc.flattening.enabled="true" --cdc.config.schema.include.list=inventory --cdc.config.table.include.list="inventory.customers" | valkey-sink --valKey.consumer.key.prefix="customer-"
+postgres-to-valkey-sql-cdc=valkey-sql-cdc --spring.datasource.url="jdbc:postgresql://localhost/postgres" --spring.datasource.username=postgres --spring.datasource.password=postgres --cdc.source.jdbc.lastRowIdWherePosition=1 --cdc.source.jdbc.lastTimestampWherePosition=2 --cdc.source.jdbc.sqlSqlWhereClause="where CAST (id AS INTEGER) > CAST (? AS INTEGER) or order_date > ?" --cdc.source.jdbc.cdcId=postgreSqlToValKey --cdc.source.jdbc.sqlSelectWithFrom="select id, order_date, purchaser, quantity, product_id from inventory.orders"  --cdc.source.jdbc.lastRowIdSelectColumnName=id  --cdc.source.jdbc.lastTimestampSelectColumnName=order_date --cdc.source.schedule.cron="*/10 * * * * *"  | valkey-sink --valKey.consumer.key.prefix="orders-"
 ```
 
-```sql
+![postgres-to-valkey-scdf-sql-cdc.png](img%2Fpostgres-to-valkey-scdf-sql-cdc.png)
 
-\d+ inventory.customers;
-drop table inventory.customer_sync;
+Then Click Deploy -> Deploy Stream
 
-
-CREATE TABLE inventory.customers (
-	id serial4 NOT NULL,
-	first_name varchar(255) NOT NULL,
-	last_name varchar(255) NOT NULL,
-	email varchar(255) NOT NULL,
-	save_ts timestamp  DEFAULT NOW(),
-	CONSTRAINT customers_email_key UNIQUE (email),
-	CONSTRAINT customers_pkey PRIMARY KEY (id)
-);
-
-CREATE TABLE inventory.customer_sync (
-    id        integer CONSTRAINT cust_sync_id PRIMARY KEY,
-    save_ts timestamp  DEFAULT NOW()
-);
-```
-
-```shell
-select cust.id, cust.save_ts
-from inventory.customers cust
-where 
-
-```
-
-
-![scdf-stream.png](img/scdf-stream.png)
-
-Click Deploy -> Deploy Stream
-
-![scdf-deploy.png](img/scdf-deploy.png)
 
 --------------
 # Testing
@@ -99,11 +78,6 @@ Run cli
 ./deployments/local/valkey/valkey-cli.sh
 ```
 
-Connect to the locator
-```shell
-connect
-```
-
 Select the customer data
 
 ```shell
@@ -111,13 +85,13 @@ SCAN 0
 ```
 
 ```shell
-GET "ValKeyConsumer-1001"
+GET orders-10001
 ```
 
 Example response
 
 ```shell
-"{\"id\":1001,\"first_name\":\"Sally\",\"last_name\":\"Thomas\",\"email\":\"sally.thomas@acme.com\"}"
+"{\"order_date\":1452920400000,\"quantity\":1,\"purchaser\":1001,\"product_id\":102,\"id\":10001}"
 ```
 
 
@@ -132,14 +106,23 @@ podman exec -it postgres psql -d postgres -U postgres
 Select current data
 
 ```shell
-select * from inventory.customers;
+select * from inventory.orders;
 ```
 
 Insert new data into inventory customers
 
 ```shell
-insert into inventory.customers(id, first_name, last_name, email)
-values(1005,'Josiah','Imani','jimani@example.email');
+INSERT INTO inventory.orders
+(id, order_date, purchaser, quantity, product_id)
+VALUES(nextval('inventory.orders_id_seq'::regclass), now(), 1002, 10, 102);
+```
+
+or use a fixed id
+
+```shell
+INSERT INTO inventory.orders
+(id, order_date, purchaser, quantity, product_id)
+VALUES(999999, now(), 1002, 10, 102);
 ```
 
 
@@ -147,5 +130,5 @@ View Data in ValKey  shell
 
 ```shell
 SCAN 0
-GET "ValKeyConsumer-1005"
+GET "ValKeyConsumer-999999"
 ```
