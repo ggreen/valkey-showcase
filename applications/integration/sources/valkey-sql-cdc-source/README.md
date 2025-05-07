@@ -1,4 +1,7 @@
+# valkey-sql-cdc-source
 
+This Change Data Capture example uses a Spring Cloud Stream application with basic SQL configurations.
+It will detect changes based on serial primary key or update timestamps in source relational databases such as Postgres.
 
 ---------------------------------------
 # Docker building image
