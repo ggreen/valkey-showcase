@@ -1,4 +1,4 @@
-podman run --rm -d --name valkey-server \
+podman run --rm -it --name valkey-server \
     -e ALLOW_EMPTY_PASSWORD=yes \
      -p 6379:6379 \
     valkey/valkey:8.1
