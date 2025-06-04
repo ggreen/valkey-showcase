@@ -9,12 +9,12 @@ mkdir $PWD/runtime
 Start Servers
 
 ```shell
-podman run -d --rm --network=valkey  -v $PWD/runtime:/usr/local/etc/valkey-runtime -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server1 --name valkey-server1 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-1.conf
-podman run -d --rm --network=valkey  -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server2  --name valkey-server2 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-2.conf
-podman run -d --rm --network=valkey -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server3  --name valkey-server3 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-3.conf
-podman run -d --rm --network=valkey -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server4 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-4.conf
-podman run -d --rm --network=valkey -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server5 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-5.conf
-podman run -d --rm --network=valkey -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server6 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-6.conf
+podman run -d --rm --network=valkey -p 6701:6701 -v $PWD/runtime:/usr/local/etc/valkey-runtime -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server1 --name valkey-server1 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-1.conf
+podman run -d --rm --network=valkey -p 6702:6702 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server2  --name valkey-server2 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-2.conf
+podman run -d --rm --network=valkey -p 6703:6703 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server3  --name valkey-server3 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-3.conf
+podman run -d --rm --network=valkey -p 6704:6704 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server4 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-4.conf
+podman run -d --rm --network=valkey -p 6705:6705 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server5 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-5.conf
+podman run -d --rm --network=valkey -p 6706:6706 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server6 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-6.conf
 
 ```
 
@@ -22,7 +22,7 @@ podman run -d --rm --network=valkey -v $PWD/runtime:/usr/local/etc/valkey-runtim
 Create cluster
 
 ```shell
-podman exec -it valkey-server1 valkey-cli --cluster create valkey-server1:7000 valkey-server2:7000  valkey-server3:7000 valkey-server4:7000 valkey-server5:7000 valkey-server6:7000  --cluster-replicas 1
+podman exec -it valkey-server1 valkey-cli --cluster create valkey-server1:7001 valkey-server2:7002  valkey-server3:7003 valkey-server4:7004 valkey-server5:7005 valkey-server6:7006  --cluster-replicas 1
 ```
 
 Interact with the cluster
