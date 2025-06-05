@@ -1,0 +1,15 @@
+server:
+  port: 8064
+spring:
+  application:
+    name: stream-source
+  cloud:
+    function:
+      definition: publish;
+      http:
+        POST: publish
+      web:
+        path: /publish
+valkey:
+  stream:
+    name: stream
