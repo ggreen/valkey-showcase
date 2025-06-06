@@ -1,4 +1,4 @@
-package showcase.valkey.stream.source;
+package showcase.valkey.stream.sink;
 
 import io.valkey.Jedis;
 import org.springframework.beans.factory.annotation.Value;

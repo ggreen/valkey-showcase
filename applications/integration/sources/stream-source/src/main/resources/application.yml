@@ -9,7 +9,7 @@ spring:
       http:
         POST: publish
       web:
-        path: /publish
+        path: /functions
 valkey:
   stream:
     name: stream

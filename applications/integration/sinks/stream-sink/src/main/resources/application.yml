@@ -1,0 +1,11 @@
+server:
+  port: 0
+spring:
+  application:
+    name: stream-sink
+valkey:
+  stream:
+    name: stream
+  consumer:
+    stream:
+      count: 10

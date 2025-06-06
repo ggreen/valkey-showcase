@@ -16,6 +16,7 @@
         <module>applications/customer-service</module>
         <module>applications/integration/sinks/valkey-sink</module>
         <module>applications/integration/sources/stream-source</module>
+        <module>applications/integration/sinks/stream-sink</module>
     </modules>
     <build>
         <pluginManagement>
