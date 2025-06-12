@@ -1,6 +1,6 @@
 ## Start ValKey
 
-Run the following to create a Docker network for the ValKey locator and server members to communicate.
+Run the following to create a  network for the ValKey locator and server members to communicate.
 
 
 Run the following to Start a ValKey

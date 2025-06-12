@@ -12,6 +12,10 @@ import showcase.valkey.stream.source.domain.StreamPayload;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * Publisher Configuration
+ * @author gregory green
+ */
 @Configuration
 @Slf4j
 public class PubConfig {
@@ -23,11 +27,20 @@ public class PubConfig {
     Publisher<Map<String,String>> producer(Jedis connection)
     {
         return message -> {
-            var entryId = connection.xadd(streamName, XAddParams.xAddParams().maxLen(1000), message);
+            var entryId = connection.xadd(streamName,
+                    XAddParams.xAddParams().maxLen(1000),
+                    message);
             log.info("Published stream entry with ID: {}", entryId);
         } ;
     }
 
+    /**
+     * This will create a Spring Cloud Function that is exposed at the HTTP endport
+     * http://host:port/swagger-ui/index.html#/default/publish_POST
+     *
+     * @param publisher the implementation to send a Stream message
+     * @return the Consumer function exposed as an HTTP endpoint
+     */
     @Bean
     Consumer<StreamPayload> publish(Publisher<Map<String,String>> publisher)
     {

@@ -10,10 +10,12 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * @author gregory green
+ */
 @Configuration
 @Slf4j
 public class ConsumerConfig {
@@ -24,30 +26,39 @@ public class ConsumerConfig {
     @Value("${valkey.consumer.stream.count}")
     private int count;
 
+
     @Bean
-    CommandLineRunner runner(Jedis jedis, Consumer<List<Map.Entry<String, List<StreamEntry>>>>  consumer){
+    CommandLineRunner runner(Jedis jedis, Consumer<StreamEntry>  consumer) {
 
         return args -> {
-            // Create XReadParams (1 message, block indefinitely = 0 ms)
-            XReadParams xReadParams = XReadParams.xReadParams().count(count).block(0);
-            // Reading entries from the stream: must pass Map<String, StreamEntryID>
-            consumer.accept(
-                        jedis.xread(xReadParams, Map.of(streamName, new StreamEntryID("0-0"))));
 
+            // Create XReadParams (1 message, block indefinitely = 0 ms)
+            XReadParams xReadParams = XReadParams.xReadParams().count(100).block(0);
+
+            //Start from beginning of stream
+            StreamEntryID streamEntryID = new StreamEntryID("0-0");
+
+            // Reading entries from the stream: must pass Map<String, StreamEntryID>
+            while (true) {
+                // Reading entries from the stream: must pass Map<String, StreamEntryID>
+
+                var result = jedis.xread(xReadParams, Map.of(streamName, streamEntryID));
+
+                for (var stream : result) {
+                    for (StreamEntry entry : stream.getValue()) {
+                        consumer.accept(entry);
+                        streamEntryID = entry.getID(); //save entry ID
+                    }
+                }
+            }
         };
     }
 
-    @Bean
-    Consumer<List<Map.Entry<String, List<StreamEntry>>>> consumer(Jedis jedis){
-        return result -> {
-            log.info("Results: {}",result);
 
-            for (var stream : result) {
-                log.info("Stream: {}", stream.getKey());
-                for (StreamEntry entry : stream.getValue()) {
-                    log.info("ID: {}, Fields: {}",entry.getID(), entry.getFields());
-                }
-            }
+    @Bean
+    Consumer<StreamEntry> consumer(Jedis jedis){
+        return entry -> {
+            log.info("Results id:{}, fields: {}",entry.getID(),entry.getFields());
         };
     }
 }
