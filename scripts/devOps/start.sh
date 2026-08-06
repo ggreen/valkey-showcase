@@ -1,0 +1,1 @@
+valkey-server /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/scripts/devOps/security/valkey.conf

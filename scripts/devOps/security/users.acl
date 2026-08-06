@@ -1,0 +1,6 @@
+user default off
+user cluster_internal_admin on
+user app_user on >SuperStrongAppPassword123! ~app-specific-keyspace:* +get +set +del +expire
+user monitor_user on >AnotherStrongMonitorPassword123! ~* +ping +info +client|list
+user sentinel_admin on >SuperSecureSentinelPassword123! ~* +ping +info +multi +exec +slaveof +acl
+user secured_app_user on #2c9a8d02fc17ae77e926d38fe83c3529d6638d1d636379503f0c6400e063445f ~* +@read +@write +ping +info +multi +exec +slaveof +acl

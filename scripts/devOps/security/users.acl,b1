@@ -1,0 +1,25 @@
+###############################################################################
+# VALKEY ACCESS CONTROL LIST (ACL) CONFIGURATION
+###############################################################################
+
+# 1. DISABLE DEFAULT USER
+# Strips all permissions and disables the default unauthenticated user account.
+user default off
+
+# 2. INTERNAL CLUSTER & REPLICATION ADMIN
+# Grants internal master/replica nodes full access for resharding and sync.
+# Password is set via SHA-256 hash (Pre-hashed example below).
+user cluster_internal_admin on #e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ~* +@all
+
+# 3. APPLICATION SERVICE USER (LEAST-PRIVILEGE CACHE)
+# Strict least-privilege: Access restricted strictly to keys under "cached:*".
+# Blocks destructive categories (-@dangerous, -@scripting, -@admin).
+user cache_writer on >SuperStrongAppPassword123! ~cached:* +get +set +del +expire
+
+# 4. MONITORING / HEALTH CHECK USER
+# Restricted to basic ping and non-sensitive diagnostic info commands.
+user monitor_user on >AnotherStrongMonitorPassword123! ~* +ping +info +client|list
+
+# 5. SENTINEL AGENT USER
+# Minimal permissions required for Sentinel failover and monitoring operations.
+user sentinel_admin on >SuperSecureSentinelPassword123! ~* +ping +info +multi +exec +slaveof

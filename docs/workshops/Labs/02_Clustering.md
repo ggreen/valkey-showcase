@@ -9,12 +9,12 @@ mkdir $PWD/runtime
 Start Servers
 
 ```shell
-podman run -d --rm --network=valkey -p 6701:6701 -v $PWD/runtime:/usr/local/etc/valkey-runtime -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server1 --name valkey-server1 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-1.conf
-podman run -d --rm --network=valkey -p 6702:6702 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server2  --name valkey-server2 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-2.conf
-podman run -d --rm --network=valkey -p 6703:6703 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server3  --name valkey-server3 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-3.conf
-podman run -d --rm --network=valkey -p 6704:6704 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server4 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-4.conf
-podman run -d --rm --network=valkey -p 6705:6705 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server5 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-5.conf
-podman run -d --rm --network=valkey -p 6706:6706 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server6 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-6.conf
+podman run -d --rm --network=valkey -p 6701:6701 -v $PWD/runtime:/usr/local/etc/valkey-runtime -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server1 --name valkey-server1 valkey/valkey:8.1 valkey-server  /usr/local/etc/valkey/valkey-server-1.conf --port 7001
+podman run -d --rm --network=valkey -p 6702:6702 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey --hostname valkey-server2  --name valkey-server2 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-2.conf  --port 7002
+podman run -d --rm --network=valkey -p 6703:6703 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server3  --name valkey-server3 valkey/valkey:8.1 valkey-server  /usr/local/etc/valkey/valkey-server-3.conf  --port 7003
+podman run -d --rm --network=valkey -p 6704:6704 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server4 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-4.conf  --port 7004
+podman run -d --rm --network=valkey -p 6705:6705 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server5 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-5.conf  --port 7005
+podman run -d --rm --network=valkey -p 6706:6706 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v /Users/Projects/solutions/cloudNativeData/showCase/dev/valkey-showcase/deployments/local/valkey/config:/usr/local/etc/valkey  --hostname valkey-server4  --name valkey-server6 valkey/valkey:8.1 valkey-server /usr/local/etc/valkey/valkey-server-6.conf  --port 7006
 
 ```
 
@@ -29,26 +29,34 @@ Interact with the cluster
 
 
 ```shell
-podman exec -it valkey-server2 valkey-cli -c -p 7000 -h 127.0.0.1
+podman exec -it valkey-server2 valkey-cli -c -p 7002 -h 127.0.0.1
 ```
 
 ```shell
-set customer.cluster:1 '{"id" : "1001"}'
-set customer.cluster:2 '{"id" : "1002"}'
-set customer.cluster:3 '{"id" : "1003"}'
-set customer.cluster:4 '{"id" : "1004"}'
-set customer.cluster:5 '{"id" : "1005"}'
-set customer.cluster:6 '{"id" : "1006"}'
+set customer.1 '{"id" : "1001"}'
+set customer.2 '{"id" : "1002"}'
+set customer.3 '{"id" : "1003"}'
+set customer.4 '{"id" : "1004"}'
+set customer.5 '{"id" : "1005"}'
+set customer.6 '{"id" : "1006"}'
 ```
 
 
 ```shell
-get customer.cluster:1
-get customer.cluster:2
-get customer.cluster:3
-get customer.cluster:4
-get customer.cluster:5
-get customer.cluster:6
+INFO replication
+```
+
+```shell
+CLUSTER NODES
+```
+
+```shell
+get customer.1
+get customer.2
+get customer.3
+get customer.4
+get customer.5
+get customer.6
 ```
 
 
@@ -63,7 +71,7 @@ CLUSTER INFO
 identify a primary and crash it with the following command:
 
 ```shell
-podman exec -it valkey-server1 valkey-cli -p 7000 cluster nodes | grep master
+podman exec -it valkey-server1 valkey-cli -p 7001 cluster nodes | grep master
 ```
 
 
@@ -94,13 +102,22 @@ podman rm  -f valkey-server1
 Review Cluster Nodes
 
 ```shell
-podman exec -it valkey-server4 valkey-cli -p 7000 -h valkey-server4 cluster nodes
+podman exec -it valkey-server4 valkey-cli -p 7004 -h valkey-server4 cluster nodes
 ```
 
 
+
 ```shell
-get customer.cluster:1
-get customer.cluster:2
+podman exec -it valkey-server4 valkey-cli -p 7004
+```
+
+```shell
+get customer.1
+get customer.2
+get customer.3
+get customer.4
+get customer.5
+get customer.6
 ```
 
 Start Server 1
@@ -119,8 +136,62 @@ podman logs -f valkey-server1
 Review Cluster Nodes
 
 ```shell
-podman exec -it valkey-server4 valkey-cli -p 7000 -h valkey-server4 cluster nodes
+podman exec -it valkey-server4 valkey-cli -p 7004 -h valkey-server4 cluster nodes
 ```
+
+
+Kill Server 2
+
+```shell
+podman rm  -f valkey-server2
+```
+
+```shell
+podman exec -it valkey-server4 valkey-cli -p 7004
+```
+
+```shell
+get customer.1
+get customer.2
+get customer.3
+get customer.4
+get customer.5
+get customer.6
+```
+
+
+Kill Server 6
+
+```shell
+podman rm  -f valkey-server6
+```
+
+```shell
+podman exec -it valkey-server3 valkey-cli -p 7003
+```
+
+```shell
+get customer.1
+get customer.2
+get customer.3
+get customer.4
+get customer.5
+get customer.6
+```
+
+View missing slots
+
+```shell
+podman exec -it valkey-server3 valkey-cli --cluster check valkey-server3:7003
+podman exec -it valkey-server4 valkey-cli --cluster check valkey-server4:7004
+podman exec -it valkey-server5 valkey-cli --cluster check valkey-server5:7005
+```
+
+
+```shell
+podman exec -it valkey-server4 valkey-cli --cluster fix valkey-server4:7004  --cluster-fix-with-unreachable-primaries
+```
+
 
 -------------------
 
