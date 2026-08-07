@@ -53,26 +53,19 @@ set customer.7 '{"id" : "1007"}'
 set customer.8 '{"id" : "1008"}'
 ```
 
-
-```shell
-INFO replication
-```
-
 ```shell
 CLUSTER NODES
 ```
 
+Start Spring in New Terminal
 ```shell
-get customer.1
-get customer.2
-get customer.3
-get customer.4
-get customer.5
-get customer.6
-get customer.7
-get customer.8
+java -jar applications/customer-service/target/customer-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=clustering --server.port=8070
 ```
 
+
+```shell
+deployments/local/scripts/user-loop-test.sh
+```
 
 
 View Cluster Details 
