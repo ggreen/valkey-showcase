@@ -63,6 +63,8 @@ java -jar applications/customer-service/target/customer-service-0.0.1-SNAPSHOT.j
 ```
 
 
+Start script
+
 ```shell
 deployments/local/scripts/user-loop-test.sh
 ```

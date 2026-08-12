@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import showcase.valkey.domain.Customer;
 import showcase.valkey.repository.CustomerRepository;
 
@@ -27,10 +28,12 @@ class CustomerControllerTest {
 
     @Mock
     private CustomerRepository customerRepository;
+    @Mock
+    private LettuceConnectionFactory factory;
 
     @BeforeEach
     void setUp() {
-        subject = new CustomerController(customerRepository);
+        subject = new CustomerController(customerRepository,factory);
     }
 
     @Test

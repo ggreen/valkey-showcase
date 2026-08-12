@@ -29,34 +29,30 @@ Create cluster
 podman exec -it valkey-site1-server-1 valkey-cli --cluster create valkey-site1-server-1:7001 valkey-site1-server-2:7002  valkey-site1-server-3:7003 valkey-site2-server-1:7004 valkey-site2-server-2:7005 valkey-site2-server-3:7006  --cluster-replicas 1
 ```
 
-Start App
 
+Start Spring in New Terminal
 
 ```shell
 java -jar applications/customer-service/target/customer-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=clustering --server.port=8070
 ```
 
 
+
 ```shell
-INFO replication
+./deployments/local/scripts/user-loop-test.sh
+```
+
+
+Interact with the cluster
+
+
+```shell
+podman exec -it valkey-site2-server-3 valkey-cli -c -p 7006 -h 127.0.0.1
 ```
 
 ```shell
 CLUSTER NODES
 ```
-
-```shell
-get customer.1
-get customer.2
-get customer.3
-get customer.4
-get customer.5
-get customer.6
-get customer.7
-get customer.8
-```
-
-
 
 View Cluster Details 
 
@@ -65,28 +61,19 @@ CLUSTER INFO
 ```
 
 
-
-
 Crash site 1
 
 ```shell
 podman rm  -f valkey-site1-server-1 valkey-site1-server-2 valkey-site1-server-3
 ```
 
-```shell
-get customer.1
-get customer.2
-get customer.3
-get customer.4
-get customer.5
-get customer.6
-get customer.7
-get customer.8
-```
+
+Repair Cluster
 
 ```shell
 podman exec -it valkey-site2-server-1 valkey-cli -p 7004 CLUSTER FAILOVER TAKEOVER
 podman exec -it valkey-site2-server-2 valkey-cli -p 7005 CLUSTER FAILOVER TAKEOVER
+
 podman exec -it valkey-site2-server-3 valkey-cli -p 7006 CLUSTER FAILOVER TAKEOVER
 ```
 

@@ -10,8 +10,15 @@ spring:
           - localhost:7004
           - localhost:7005
           - localhost:7006
+      lettuce:
+        cluster:
+          refresh:
+            # Re-fetches the cluster state when errors occur
+            adaptive: true
+            # Periodically re-fetches cluster topology to ensure it stays up to date
+            period: 30s
         # Max redirects when keys move during failover/resharding
-        max-redirects: 3
+#        max-redirects: 3
 
       # Connection timeouts
       connect-timeout: 3000ms
