@@ -3,6 +3,9 @@
 
 This guide walks through setting up a multi-site 6-node Valkey cluster using Podman, connecting a Spring Boot application, and simulating a site failure and manual failover takeover.
 
+![spring-2-site-clustering.png](imgs/spring-2-site-clustering.png)
+
+
 
 ## Prerequisites
 
