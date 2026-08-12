@@ -37,25 +37,10 @@ podman exec -it valkey-site1-server-1 valkey-cli --cluster create valkey-site1-s
 
 Interact with the cluster
 
-
 ```shell
-podman exec -it valkey-site3-server-2 valkey-cli -c -p 7006 -h 127.0.0.1
+podman exec -it valkey-site2-server-2 valkey-cli -c -p 7005 -h 127.0.0.1
 ```
 
-```shell
-set customer.1 '{"id" : "1001"}'
-set customer.2 '{"id" : "1002"}'
-set customer.3 '{"id" : "1003"}'
-set customer.4 '{"id" : "1004"}'
-set customer.5 '{"id" : "1005"}'
-set customer.6 '{"id" : "1006"}'
-set customer.7 '{"id" : "1007"}'
-set customer.8 '{"id" : "1008"}'
-```
-
-```shell
-CLUSTER NODES
-```
 
 Start Spring in New Terminal
 ```shell

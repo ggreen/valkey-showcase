@@ -105,7 +105,32 @@ Note: Spring Application should now auto-recover with no data loss
     Getting customer 12...
 
 
+See application cluster properties to support recovery
 
+```yaml
+spring:
+  data:
+    redis:
+      # Enable cluster mode and specify node endpoints
+      cluster:
+        nodes:
+          - localhost:7001
+          - localhost:7002
+          - localhost:7003
+          - localhost:7004
+          - localhost:7005
+          - localhost:7006
+      lettuce:
+        cluster:
+          refresh:
+            # Re-fetches the cluster state when errors occur
+            adaptive: true
+            # Periodically re-fetches cluster topology to ensure it stays up to date
+            period: 30s
+      # Connection timeouts
+      connect-timeout: 3000ms
+      timeout: 3000ms
+```
 
 -------------------
 
