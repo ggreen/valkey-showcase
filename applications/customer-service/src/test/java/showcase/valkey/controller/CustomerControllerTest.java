@@ -28,12 +28,10 @@ class CustomerControllerTest {
 
     @Mock
     private CustomerRepository customerRepository;
-    @Mock
-    private LettuceConnectionFactory factory;
 
     @BeforeEach
     void setUp() {
-        subject = new CustomerController(customerRepository,factory);
+        subject = new CustomerController(customerRepository);
     }
 
     @Test

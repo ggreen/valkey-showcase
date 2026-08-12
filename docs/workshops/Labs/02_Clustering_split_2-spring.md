@@ -37,6 +37,7 @@ java -jar applications/customer-service/target/customer-service-0.0.1-SNAPSHOT.j
 ```
 
 
+Do Write/Read events in a Loop 
 
 ```shell
 ./deployments/local/scripts/user-loop-test.sh
@@ -61,19 +62,24 @@ CLUSTER INFO
 ```
 
 
-Crash site 1
+Crash site 1 (with all primaries)
 
 ```shell
 podman rm  -f valkey-site1-server-1 valkey-site1-server-2 valkey-site1-server-3
 ```
 
+Note: script get Internal Server
 
-Repair Cluster
+Example Errors
+
+    Getting customer 03...
+    {"timestamp":"2026-08-12T20:12:31.481+00:00","status":500,"error":"Internal Server Error","path":"/customers/03"}
+
+Repair Cluster (promote replicas to primary)
 
 ```shell
 podman exec -it valkey-site2-server-1 valkey-cli -p 7004 CLUSTER FAILOVER TAKEOVER
 podman exec -it valkey-site2-server-2 valkey-cli -p 7005 CLUSTER FAILOVER TAKEOVER
-
 podman exec -it valkey-site2-server-3 valkey-cli -p 7006 CLUSTER FAILOVER TAKEOVER
 ```
 
@@ -91,88 +97,14 @@ podman exec -it valkey-site2-server-1 valkey-cli -p 7004 -h valkey-site2-server-
 podman exec -it valkey-site2-server-1 valkey-cli -p 7004
 ```
 
-```shell
-get customer.1
-get customer.2
-get customer.3
-get customer.4
-get customer.5
-get customer.6
-get customer.7
-get customer.8
-```
-
-Start Server 1
-
-```shell
-podman run -d --rm --network=valkey  -v $PWD/runtime:/usr/local/etc/valkey-runtime -v $PWD/deployments/local/valkey/config/multi-site/2-sites:/usr/local/etc/valkey --hostname valkey-site1-server-1 --name valkey-site1-server-1 valkey/valkey:9.1 valkey-server /usr/local/etc/valkey/valkey-site1-server-1.conf
-```
-View server 1 logs
-
-```shell
-podman logs -f valkey-site1-server-1
-```
+Note: Spring Application should now auto-recover with no data loss
 
 
-
-Review Cluster Nodes
-
-```shell
-podman exec -it valkey-site2-server-1 valkey-cli -p 7004 -h valkey-site2-server-1 cluster nodes
-```
+    Getting customer 11...
+    {"id":"11","first_name":"Jill11","last_name":"Smith","email":"jsmith11@cloudNativeData.io"}
+    Getting customer 12...
 
 
-Kill Server 2
-
-```shell
-podman rm  -f valkey-site1-server-2
-```
-
-```shell
-podman exec -it valkey-site2-server-1 valkey-cli -p 7004
-```
-
-```shell
-get customer.1
-get customer.2
-get customer.3
-get customer.4
-get customer.5
-get customer.6
-```
-
-
-Kill Server 6
-
-```shell
-podman rm  -f valkey-site2-server-3
-```
-
-```shell
-podman exec -it valkey-site1-server-3 valkey-cli -p 7003
-```
-
-```shell
-get customer.1
-get customer.2
-get customer.3
-get customer.4
-get customer.5
-get customer.6
-```
-
-View missing slots
-
-```shell
-podman exec -it valkey-site1-server-3 valkey-cli --cluster check valkey-site1-server-3:7003
-podman exec -it valkey-site2-server-1 valkey-cli --cluster check valkey-site2-server-1:7004
-podman exec -it valkey-site2-server-2 valkey-cli --cluster check valkey-site2-server-2:7005
-```
-
-
-```shell
-podman exec -it valkey-site2-server-1 valkey-cli --cluster fix valkey-site2-server-1:7004  --cluster-fix-with-unreachable-primaries
-```
 
 
 -------------------
