@@ -32,7 +32,7 @@ podman run -d --rm --network=valkey -p 7006:7006 -v $PWD/runtime:/usr/local/etc/
 Create cluster (the order of nodes asserts that primaries and replicas are not on the same site)
 
 ```shell
-podman exec -it valkey-site1-server-1 valkey-cli --cluster create valkey-site1-server-1:7001 valkey-site2-server-1:7004  valkey-site3-server-1:7003  valkey-site3-server-2:7006  valkey-site1-server-2:7002 valkey-site2-server-2:7005  --cluster-replicas 1
+podman exec -it valkey-site1-server-1 valkey-cli --cluster create valkey-site1-server-1:7001 valkey-site2-server-1:7004  valkey-site3-server-1:7003 valkey-site1-server-2:7002   valkey-site2-server-2:7005   valkey-site3-server-2:7006   --cluster-replicas 1
 ```
 
 Interact with the cluster
