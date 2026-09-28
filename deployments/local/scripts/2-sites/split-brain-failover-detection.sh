@@ -2,7 +2,8 @@
 
 # This is DRAFT reference scripts for detection a Valkey Cluster
 # Split brain, where all primaries in site 1 are down.
-# It script will issues cluster failover in site 2
+# It script will issue a cluster failover command in site 2,
+# if all primaries are not available.
 
 # Checks overall cluster state via CLUSTER INFO across multiple host:port endpoints
 check_valkey_cluster() {
