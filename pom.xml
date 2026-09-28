@@ -11,12 +11,14 @@
     <name>spring-gemfire-showcase-parent</name>
 
     <modules>
+        <module>components/domains</module>
         <module>applications/integration/sources/valkey-sql-cdc-source</module>
         <module>applications/valkey-service</module>
         <module>applications/customer-service</module>
         <module>applications/integration/sinks/valkey-sink</module>
         <module>applications/integration/sources/stream-source</module>
         <module>applications/integration/sinks/stream-sink</module>
+        <module>applications/witness/witness-example</module>
     </modules>
     <build>
         <pluginManagement>

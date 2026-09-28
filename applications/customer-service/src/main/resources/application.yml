@@ -3,3 +3,31 @@ server:
 spring:
   application:
     name: customer-service
+  data:
+    redis:
+      # Enable cluster mode and specify node endpoints
+      cluster:
+        nodes:
+          - localhost:7011
+          - localhost:7012
+          - localhost:7021
+          - localhost:7021
+          - localhost:7031
+          - localhost:7032
+      lettuce:
+        cluster:
+          refresh:
+            # Re-fetches the cluster state when errors occur
+            adaptive: true
+            # Periodically re-fetches cluster topology to ensure it stays up to date
+            period: 30s
+        # Max redirects when keys move during failover/resharding
+      #        max-redirects: 3
+
+      # Connection timeouts
+      connect-timeout: 3000ms
+      timeout: 3000ms
+valkey:
+  witness-slots:
+    lower-bound: 2      # Reserves slots 0, 1, 2
+    upper-bound: 16381  # Reserves slots 16381, 16382, 16383
