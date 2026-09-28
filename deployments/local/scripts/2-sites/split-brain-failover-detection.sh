@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# This is DRAFT reference scripts for detection a Valkey Cluster
+# Split brain, where all primaries in site 1 are down.
+# It script will issues cluster failover in site 2
+
 # Checks overall cluster state via CLUSTER INFO across multiple host:port endpoints
 check_valkey_cluster() {
     local endpoints=("$@")
@@ -109,6 +113,7 @@ count_valkey_running_primaries() {
 }
 
 
+# Executes CLUSTER FAILOVER TAKEOVER on target endpoints, skipping nodes that are already primaries
 trigger_failover_takeover_on_replicas() {
     local target_replicas=("$@")
 
@@ -117,30 +122,40 @@ trigger_failover_takeover_on_replicas() {
         return 2
     fi
 
-    local raw_endpoint clean_endpoint host port failover_res exit_code
+    local raw_endpoint clean_endpoint host port node_info role failover_res exit_code
     local success_count=0
     local fail_count=0
+    local skipped_count=0
 
-    echo "Starting takeover execution on specified replicas..." >&2
+    echo "Starting takeover execution on specified targets..." >&2
 
     for raw_endpoint in "${target_replicas[@]}"; do
         [ -z "$raw_endpoint" ] && continue
 
-        # Clean up accidental double colons (e.g. 'host::port' -> 'host:port')
+        # Clean up accidental double colons (e.g., 'host::port' -> 'host:port')
         clean_endpoint=$(echo "$raw_endpoint" | tr -s ':')
 
         # Split host:port
         host="${clean_endpoint%%:*}"
         port="${clean_endpoint##*:}"
+        [ "$host" = "$port" ] && port="6379"
 
-        # Fall back to default port 6379 if no port specified
-        if [ "$host" = "$port" ]; then
-            port="6379"
+        # Check the role of the node first
+        role=$(valkey-cli -h "$host" -p "$port" INFO replication 2>/dev/null | awk -F: '/role:/ {print $2}' | tr -d '\r')
+
+        if [ "$role" = "master" ]; then
+            echo "SKIP: Node ${host}:${port} is already a primary (master). No takeover needed." >&2
+            ((skipped_count++))
+            ((success_count++))
+            continue
+        elif [ -z "$role" ]; then
+            echo "ERROR: Unable to connect or read role from ${host}:${port}." >&2
+            ((fail_count++))
+            continue
         fi
 
-        echo "Issuing 'CLUSTER FAILOVER TAKEOVER' to ${host}:${port}..." >&2
+        echo "Issuing 'CLUSTER FAILOVER TAKEOVER' to replica at ${host}:${port}..." >&2
 
-        # Run command against the specific replica node
         failover_res=$(valkey-cli -h "$host" -p "$port" CLUSTER FAILOVER TAKEOVER 2>&1)
         exit_code=$?
 
@@ -153,7 +168,7 @@ trigger_failover_takeover_on_replicas() {
         fi
     done
 
-    echo "Takeover sequence completed. Successful: ${success_count}, Failed: ${fail_count}." >&2
+    echo "Takeover sequence completed. Successful: ${success_count} (Skipped/Already Master: ${skipped_count}), Failed: ${fail_count}." >&2
 
     if [ "$fail_count" -gt 0 ]; then
         return 1
@@ -161,23 +176,23 @@ trigger_failover_takeover_on_replicas() {
     return 0
 }
 
-# --- Example Usage ---
+# --- Example Usage --- Change the host:ports to reflect your local environment
 
-NODES_TO_CHECK=("localhost:7001" "localhost:7002" "localhost:7003" "localhost:7004" "localhost:7005" "localhost:7006")
+CLUSTER_NODES_TO_CHECK=("valkey-site1-server-1:7001" "valkey-site1-server-2:7002" "valkey-site1-server-3:7003" "valkey-site2-server-1:7004" "valkey-site2-server-2:7005" "valkey-site2-server-3:7006")
+REPLICAS_TO_PROMOTE=("valkey-site2-server-1:7004" "valkey-site2-server-2:7005" "valkey-site2-server-3::7006")
 
-if check_valkey_cluster "${NODES_TO_CHECK[@]}"; then
+if check_valkey_cluster "${CLUSTER_NODES_TO_CHECK[@]}"; then
     echo "Cluster is healthy, proceeding with deployment..."
 else
     echo "Cluster check failed with exit status $?"
 
     # Capture down primaries count
-    PRIMARY_COUNT=$(count_valkey_running_primaries "${NODES_TO_CHECK[@]}")
+    PRIMARY_COUNT=$(count_valkey_running_primaries "${CLUSTER_NODES_TO_CHECK[@]}")
     echo "Running primaries count: $PRIMARY_COUNT"
     if [ "$PRIMARY_COUNT" -eq 0 ]; then
 
       # Trigger force takeover on all replicas matching site2 IPs or hostnames
-      trigger_failover_takeover_on_replicas "valkey-site2-server-1:7004" "valkey-site2-server-2:7005" "valkey-site2-server-3::7005"
-
+      trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
     fi
 fi
 

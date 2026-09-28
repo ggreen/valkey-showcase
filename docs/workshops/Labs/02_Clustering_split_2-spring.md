@@ -5,8 +5,6 @@ This guide walks through setting up a multi-site 6-node Valkey cluster using Pod
 
 ![spring-2-site-clustering.png](imgs/spring-2-site-clustering.png)
 
-
-
 ## Prerequisites
 
 - Podman installed and running 
@@ -34,7 +32,7 @@ Launch 6 Valkey server containers split across two simulated sites:
 - Site 2: Ports 7004–7006
 
 ```shell
-echo "Starting Site 1"
+echo "Starting Site 1" 
 
 podman run -d   --rm --network=valkey -p 7001:7001 -v $PWD/runtime:/usr/local/etc/valkey-runtime -v $PWD/deployments/local/valkey/config/multi-site/2-sites:/usr/local/etc/valkey --hostname valkey-site1-server-1 --name valkey-site1-server-1 valkey/valkey:9.1 valkey-server  /usr/local/etc/valkey/valkey-site1-server-1.conf --port 7001
 podman run -d --rm --network=valkey -p 7002:7002 -v $PWD/runtime:/usr/local/etc/valkey-runtime  -v $PWD/deployments/local/valkey/config/multi-site/2-sites:/usr/local/etc/valkey --hostname valkey-site1-server-2  --name valkey-site1-server-2 valkey/valkey:9.1 valkey-server /usr/local/etc/valkey/valkey-site1-server-2.conf  --port 7002
@@ -119,16 +117,12 @@ Execute Manual Failover
 Promote the Site 2 replicas to primaries using TAKEOVER:
 
 ```shell
-podman exec -it valkey-site2-server-1 valkey-cli -p 7004 CLUSTER FAILOVER TAKEOVER
-podman exec -it valkey-site2-server-2 valkey-cli -p 7005 CLUSTER FAILOVER TAKEOVER
-podman exec -it valkey-site2-server-3 valkey-cli -p 7006 CLUSTER FAILOVER TAKEOVER
+./deployments/local/scripts/2-sites/split-brain-failover-detection.sh
 ```
 
 **Verify Cluster Recovery**
 
 Check that all active nodes now reflect updated primary statuses:
-
-
 
 ```shell
 podman exec -it valkey-site2-server-1 valkey-cli -p 7004 -h valkey-site2-server-1 cluster nodes
