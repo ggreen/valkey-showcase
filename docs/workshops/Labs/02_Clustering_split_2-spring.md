@@ -1,12 +1,12 @@
 # Valkey 2-Site Cluster Setup & Failover Simulation
 
-
-This guide walks through setting up a multi-site 6-node Valkey cluster using Podman, connecting a Spring Boot application, and simulating a site failure and manual failover takeover.
+This guide walks through setting up a multi-site 6-node Valkey cluster using Podman, connecting a Spring Boot application.
 
 ![spring-2-site-clustering.png](imgs/spring-2-site-clustering.png)
 
+The cluster is split between 2 sites. All primary replicas are on site 1.
 
-See [split brain failover detection script](https://github.com/ggreen/valkey-showcase/blob/main/deployments/local/scripts/2-sites/split-brain-failover-detection.sh)
+The activity simulates a site failure.  The [split brain failover detection script](https://github.com/ggreen/valkey-showcase/blob/main/deployments/local/scripts/2-sites/split-brain-failover-detection.sh) automates promoting replicas in site 2, if all the primaries are down.
 
 ## Prerequisites
 
