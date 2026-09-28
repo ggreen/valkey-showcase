@@ -93,6 +93,12 @@ View Cluster Details
 CLUSTER INFO
 ```
 
+Start script to monitor Cluster Status
+
+```shell
+deployments/local/scripts/2-sites/split-brain-failover-detection.sh
+```
+
 
 ## 6. Simulate Site Failure & Failover
 

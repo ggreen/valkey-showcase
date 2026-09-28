@@ -181,18 +181,24 @@ trigger_failover_takeover_on_replicas() {
 CLUSTER_NODES_TO_CHECK=("valkey-site1-server-1:7001" "valkey-site1-server-2:7002" "valkey-site1-server-3:7003" "valkey-site2-server-1:7004" "valkey-site2-server-2:7005" "valkey-site2-server-3:7006")
 REPLICAS_TO_PROMOTE=("valkey-site2-server-1:7004" "valkey-site2-server-2:7005" "valkey-site2-server-3::7006")
 
-if check_valkey_cluster "${CLUSTER_NODES_TO_CHECK[@]}"; then
-    echo "Cluster is healthy, proceeding with deployment..."
-else
-    echo "Cluster check failed with exit status $?"
+while true; do
+    if check_valkey_cluster "${CLUSTER_NODES_TO_CHECK[@]}"; then
+        echo "Cluster is healthy, proceeding with deployment..."
+    else
+        echo "Cluster check failed with exit status $?"
 
-    # Capture down primaries count
-    PRIMARY_COUNT=$(count_valkey_running_primaries "${CLUSTER_NODES_TO_CHECK[@]}")
-    echo "Running primaries count: $PRIMARY_COUNT"
-    if [ "$PRIMARY_COUNT" -eq 0 ]; then
+        # Capture down primaries count
+        PRIMARY_COUNT=$(count_valkey_running_primaries "${CLUSTER_NODES_TO_CHECK[@]}")
+        echo "Running primaries count: $PRIMARY_COUNT"
+        if [ "${PRIMARY_COUNT:-1}" -eq 0 ]; then
 
-      # Trigger force takeover on all replicas matching site2 IPs or hostnames
-      trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
+          # Trigger force takeover on all replicas matching site2 IPs or hostnames
+          trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
+        fi
     fi
-fi
+
+    echo "Sleeping 30 seconds ..."
+    sleep 30
+done
+
 
