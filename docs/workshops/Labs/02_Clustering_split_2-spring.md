@@ -5,6 +5,9 @@ This guide walks through setting up a multi-site 6-node Valkey cluster using Pod
 
 ![spring-2-site-clustering.png](imgs/spring-2-site-clustering.png)
 
+
+See [split brain failover detection script](deployments/local/scripts/2-sites/split-brain-failover-detection.sh)
+
 ## Prerequisites
 
 - Podman installed and running 
