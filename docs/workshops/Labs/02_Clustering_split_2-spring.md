@@ -16,13 +16,12 @@ The activity simulates a site failure.  The [split brain failover detection scri
 #### Questions
 
 
-    1. Is the script getting deployed in both the DCs ? From the script, I could make out it would be deployed only on DC1. If yes/no, I believe it would be running as a service ?
+    1. Is the script getting deployed in both the DCs ?
+    2. What happens when there is network partition between the DCs ? The primary DC would still be accepting writes and split brain would be possible
     
-       2. What happens when there is network partition between the DCs ? The primary DC would still be accepting writes and split brain would be possible
+    3. Also, what happens when the valkey is running fine, but the script/service is down.
     
-       3. Also, what happens when the valkey is running fine, but the script/service is down.
-    
-       4. Once the failover happens to DC2, will DC1 always contain the replicas of DC2 ? What if user wants to perform switch-back to DC1 ?
+    4. Once the failover happens to DC2, will DC1 always contain the replicas of DC2 ? What if user wants to perform switch-back to DC1 ?
 
 
 #### Answers
