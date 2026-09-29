@@ -6,7 +6,36 @@ This guide walks through setting up a multi-site 6-node Valkey cluster using Pod
 
 The cluster is split between 2 sites. All primary replicas are on site 1.
 
+
+## Site monitoring/failover 
+
 The activity simulates a site failure.  The [split brain failover detection script](https://github.com/ggreen/valkey-showcase/blob/main/deployments/local/scripts/2-sites/split-brain-failover-detection.sh) automates promoting replicas in site 2, if all the primaries are down.
+
+    1. Is the script getting deployed in both the DCs ? From the script, I could make out it would be deployed only on DC1. If yes/no, I believe it would be running as a service ?
+    
+       2. What happens when there is network partition between the DCs ? The primary DC would still be accepting writes and split brain would be possible
+    
+       3. Also, what happens when the valkey is running fine, but the script/service is down.
+    
+       4. Once the failover happens to DC2, will DC1 always contain the replicas of DC2 ? What if user wants to perform switch-back to DC1 ?
+
+### Failover Q&A
+
+1. Where it should run: The script is meant to act as an external monitoring orchestrator. It should not run only inside DC1. If DC1 suffers a complete site outage or network isolation, a script running strictly inside DC1 will crash/isolate along with the site and fail to trigger the failover. It should ideally run in DC2 or a 3rd arbiter location (witness site/cloud node) where it can independently monitor DC1 nodes and interact with DC2 replicas. This script version has a long-running loop to run continuously in the background. I can typically be managed by a process controller like systemd, Kubernetes DaemonSet/Deployment.
+2. The primary DC would still  accept writes and split brain would be possible. The script executes CLUSTER FAILOVER TAKEOVER on DC2 replicas. DC2 replicas forcibly promote themselves to primaries (TAKEOVER ignores cluster consensus), while DC1 primaries are still alive and accepting writes from local clients. Both sides now act as active primaries. 
+3. Valkey Cluster manages its own internal heartbeat and automatic failover mechanism between primary and replica nodes via cluster bus gossip messages.
+4. When DC1 comes back online, its old primaries will still believe they are primaries until reconnecting with DC2. Once reconnected, the cluster bus syncs state. Because DC2 nodes now have a higher epoch, DC1 nodes will detect this conflict, step down from being primaries, and reconfigure themselves to become replicas of the new DC2 primaries. However, if data diverged significantly during a split-brain, full synchronization (PSYNC/FULLSYNC) will occur, wiping any local writes made on DC1 during the partition.
+
+## To revert DC1 back to primary status and DC2 back to secondary status
+
+TAKEOVER while the cluster is healthy:
+
+- Check the DC1 nodes a replicas of D2
+- Execute a cluster failure (note: a takeover) on each DC1 replica node
+
+    valkey-cli -h <DC1_host> -p <DC1_port> CLUSTER FAILOVER 
+
+**Note:** (Using standard CLUSTER FAILOVER instead of TAKEOVER ensures a graceful switch: DC2 primaries pause writes, sync offset with DC1 replicas, swap roles cleanly, and resume traffic without data loss).
 
 ## Prerequisites
 
