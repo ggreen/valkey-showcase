@@ -4,16 +4,22 @@ spring:
   application:
     name: customer-service
   data:
-    redis:
-      # Enable cluster mode and specify node endpoints
-      cluster:
-        nodes:
-          - localhost:7011
-          - localhost:7012
-          - localhost:7021
-          - localhost:7021
-          - localhost:7031
-          - localhost:7032
+#    redis:
+#      # Enable cluster mode and specify node endpoints
+#      cluster:
+#        nodes:
+#          - localhost:7011
+#          - localhost:7012
+#          - localhost:7013
+#          - localhost:7014
+#          - localhost:7015
+#          - localhost:7016
+#          - localhost:7021
+#          - localhost:7022
+#          - localhost:7023
+#          - localhost:7024
+#          - localhost:7025
+#          - localhost:7026
       lettuce:
         cluster:
           refresh:
