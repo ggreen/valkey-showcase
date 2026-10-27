@@ -185,7 +185,7 @@ CLUSTER NODES
 
 Force-Crash Site 2
 
-Simulate a complete outage of Site 1 by abruptly stopping its containers:
+Simulate a complete outage of Site 2 by abruptly stopping its containers:
 
 ```shell
 podman rm  -f valkey-server-7021 valkey-server-7022 valkey-server-7023 valkey-server-7024 valkey-server-7025 valkey-server-7026
