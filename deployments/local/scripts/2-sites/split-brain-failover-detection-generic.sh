@@ -1,403 +1,346 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-# This is DRAFT reference script for detecting a Valkey Cluster
-# Split brain, where all primaries in site 1 are down.
-# The script will issue a cluster failover takeover in site 2,
-# enable partial slot availability if the cluster remains failed after 3 tries,
-# reduce slot replicas to 0 (detaching all slaves to independent masters),
-# and automatically repair missing/unassigned slots via 'valkey-cli --cluster fix --cluster-fix-with-unreachable-primaries --cluster-yes'.
-# All operations consistently use --cluster-announce-hostname.
+# Auto-heal and failover controller for Valkey clusters.
+# Handles quorum consensus, site-failover takeovers, partial slot coverage,
+# and cluster-fix operations while respecting announce-hostnames and TLS/Auth.
 
-# Helper: Resolves the --cluster-announce-hostname and port from CLUSTER NODES column 2
-# Input format: <ip>:<port>@<cport>[,<hostname>]
+usage() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  -c, --cluster-nodes       List of cluster endpoints to check (comma- or space-separated)
+                            [Default: env var \$CLUSTER_NODES_TO_CHECK]
+  -r, --replicas-to-promote List of replica endpoints to promote (comma- or space-separated)
+                            [Default: env var \$REPLICAS_TO_PROMOTE]
+  -a, --auth                Password for authentication [Default: env var \$VALKEY_PASSWORD]
+  --user                    Valkey ACL username [Default: env var \$VALKEY_USER]
+  --tls                     Enable TLS for valkey-cli connections [Default: env var \$VALKEY_TLS=true]
+  --cacert                  Path to CA Certificate [Default: env var \$VALKEY_CACERT]
+  --cert                    Path to Client Certificate [Default: env var \$VALKEY_CERT]
+  --key                     Path to Client Private Key [Default: env var \$VALKEY_KEY]
+  -h, --help                Show this help message and exit
+
+Examples:
+  $0 -c "node1:7001,node2:7002" -r "node3:7003,node4:7004" --tls
+EOF
+    exit 1
+}
+
+# --- CLI and Environment Parameter Defaults ---
+
+RAW_CLUSTER_NODES="${CLUSTER_NODES_TO_CHECK:-}"
+RAW_REPLICAS="${REPLICAS_TO_PROMOTE:-}"
+VALKEY_PASSWORD="${VALKEY_PASSWORD:-}"
+VALKEY_USER="${VALKEY_USER:-}"
+VALKEY_TLS="${VALKEY_TLS:-false}"
+VALKEY_CACERT="${VALKEY_CACERT:-}"
+VALKEY_CERT="${VALKEY_CERT:-}"
+VALKEY_KEY="${VALKEY_KEY:-}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -c|--cluster-nodes)       RAW_CLUSTER_NODES="$2"; shift 2 ;;
+        -r|--replicas-to-promote) RAW_REPLICAS="$2"; shift 2 ;;
+        -a|--auth)                VALKEY_PASSWORD="$2"; shift 2 ;;
+        --user)                   VALKEY_USER="$2"; shift 2 ;;
+        --tls)                    VALKEY_TLS=true; shift 1 ;;
+        --cacert)                 VALKEY_CACERT="$2"; shift 2 ;;
+        --cert)                   VALKEY_CERT="$2"; shift 2 ;;
+        --key)                    VALKEY_KEY="$2"; shift 2 ;;
+        -h|--help)                usage ;;
+        *) echo "ERROR: Unknown parameter '$1'" >&2; usage ;;
+    esac
+done
+
+if [[ -z "$RAW_CLUSTER_NODES" || -z "$RAW_REPLICAS" ]]; then
+    echo "ERROR: Missing required cluster nodes or replica target lists." >&2
+    usage
+fi
+
+IFS=',' read -r -a CLUSTER_NODES_TO_CHECK <<< "${RAW_CLUSTER_NODES// /,}"
+IFS=',' read -r -a REPLICAS_TO_PROMOTE <<< "${RAW_REPLICAS// /,}"
+
+# --- Helper: Unified Valkey CLI Invocation ---
+
+vk_cli() {
+    local host="$1"
+    local port="$2"
+    shift 2
+
+    local cmd=(valkey-cli -h "$host" -p "$port")
+
+    [[ -n "$VALKEY_USER" ]] && cmd+=(--user "$VALKEY_USER")
+    [[ -n "$VALKEY_PASSWORD" ]] && cmd+=(-a "$VALKEY_PASSWORD")
+
+    if [[ "$VALKEY_TLS" == "true" ]]; then
+        cmd+=(--tls)
+        [[ -n "$VALKEY_CACERT" ]] && cmd+=(--cacert "$VALKEY_CACERT")
+        [[ -n "$VALKEY_CERT" ]] && cmd+=(--cert "$VALKEY_CERT")
+        [[ -n "$VALKEY_KEY" ]] && cmd+=(--key "$VALKEY_KEY")
+    fi
+
+    "${cmd[@]}" "$@"
+}
+
+# Extracts announce hostname or falls back to IP while supporting IPv4 and IPv6
 resolve_endpoint_hostname() {
     local raw_addr="$1"
     local hostname=""
     local port=""
 
-    if [[ "$raw_addr" == *","* ]]; then
-        hostname="${raw_addr##*,}"
-        local before_comma="${raw_addr%%,*}"
-        local ip_port="${before_comma%%@*}"
-        port="${ip_port##*:}"
+    # Valkey CLUSTER NODES format: <ip>:<port>@<cport>[,<hostname>][,<aux_port>]
+    if [[ "$raw_addr" =~ ,([^,@]+) ]]; then
+        hostname="${BASH_REMATCH[1]}"
+        local base_addr="${raw_addr%%,*}"
+        base_addr="${base_addr%%@*}"
+        port="${base_addr##*:}"
         echo "${hostname}:${port}"
     else
-        # Fallback to IP:port if no announce hostname is configured on the node
-        local ip_port="${raw_addr%%@*}"
-        echo "$ip_port"
+        local base_addr="${raw_addr%%@*}"
+        echo "${base_addr%%,*}"
     fi
 }
 
-# Checks overall cluster state via CLUSTER INFO across multiple host:port endpoints
-check_valkey_cluster() {
-    local endpoints=("$@")
-
-    if [ ${#endpoints[@]} -eq 0 ]; then
-        if [ -n "$VALKEY_NODES" ]; then
-            read -r -a endpoints <<< "$VALKEY_NODES"
-        else
-            endpoints=("${VALKEY_HOST:-localhost}:${VALKEY_PORT:-7001}")
-        fi
+split_endpoint() {
+    local endpoint="$1"
+    local host port
+    if [[ "$endpoint" =~ ^\[(.*)\]:([0-9]+)$ ]]; then
+        host="${BASH_REMATCH[1]}"
+        port="${BASH_REMATCH[2]}"
+    else
+        host="${endpoint%%:*}"
+        port="${endpoint##*:}"
+        [[ "$host" == "$port" ]] && port="6379"
     fi
+    echo "$host" "$port"
+}
 
-    local node host port cli_cmd info_output exit_code cluster_state
-    local queried_successfully=false
+# --- Health and Topology Inspections ---
+
+# Checks cluster health by gathering consensus across all reachable nodes
+check_valkey_cluster_consensus() {
+    local endpoints=("$@")
+    local reachable=0
+    local ok_votes=0
+    local fail_votes=0
 
     for node in "${endpoints[@]}"; do
-        host="${node%%:*}"
-        port="${node##*:}"
-        [ "$host" = "$port" ] && port="6379"
 
-        cli_cmd=(valkey-cli -h "$host" -p "$port")
-        info_output=$("${cli_cmd[@]}" CLUSTER INFO 2>/dev/null)
-        exit_code=$?
+        [[ -z "$node" ]] && continue
+        read -r host port < <(split_endpoint "$node")
 
-        if [ $exit_code -ne 0 ] || [ -z "$info_output" ]; then
-            echo "WARNING: Could not connect to Valkey node at ${host}:${port}. Trying next..." >&2
-            continue
+        local info_output
+        if info_output=$(vk_cli "$host" "$port" CLUSTER INFO 2>/dev/null); then
+            ((++reachable))
+            local state
+            state=$(echo "$info_output" | awk -F: '/cluster_state/ {print $2}' | tr -d '\r')
+            if [[ "$state" == "ok" ]]; then
+                ((++ok_votes))
+            elif [[ "$state" == "fail" ]]; then
+                ((++fail_votes))
+            fi
         fi
-
-        queried_successfully=true
-        echo "Successfully connected to ${host}:${port}" >&2
-
-        cluster_state=$(echo "$info_output" | awk -F: '/cluster_state/ {print $2}' | tr -d '\r')
-
-        case "$cluster_state" in
-            "ok")
-                echo "OK: Valkey cluster state is operational (ok)." >&2
-                return 0
-                ;;
-            "fail")
-                echo "CRITICAL: Valkey cluster state is failed (fail)." >&2
-                return 1
-                ;;
-            *)
-                echo "UNKNOWN: Unexpected cluster state output: '${cluster_state}'." >&2
-                return 3
-                ;;
-        esac
     done
 
-    if [ "$queried_successfully" = false ]; then
-        echo "CRITICAL: Failed to connect to ALL specified Valkey nodes." >&2
+  echo "ok_votes $ok_votes, reachable nodes $reachable"
+
+    if [[ "$reachable" -eq 0 ]]; then
+        echo "CRITICAL: Unable to reach any nodes in the check list." >&2
         return 2
     fi
+
+    # Require strict majority of reachable nodes reporting 'ok'
+    if [[ $ok_votes -gt $((reachable / 2)) ]]; then
+        return 0
+    fi
+
+    return 1
 }
 
-# Counts total active/running primary (master) nodes across the cluster
 count_valkey_running_primaries() {
     local endpoints=("$@")
 
-    if [ ${#endpoints[@]} -eq 0 ]; then
-        if [ -n "$VALKEY_NODES" ]; then
-            read -r -a endpoints <<< "$VALKEY_NODES"
-        else
-            endpoints=("${VALKEY_HOST:-localhost}:${VALKEY_PORT:-7001}")
-        fi
-    fi
-
-    local node host port cli_cmd nodes_output exit_code
-    local running_primaries
-    local queried_successfully=false
-
     for node in "${endpoints[@]}"; do
-        host="${node%%:*}"
-        port="${node##*:}"
-        [ "$host" = "$port" ] && port="6379"
+        [[ -z "$node" ]] && continue
+        read -r host port < <(split_endpoint "$node")
 
-        cli_cmd=(valkey-cli -h "$host" -p "$port")
-        nodes_output=$("${cli_cmd[@]}" CLUSTER NODES 2>/dev/null)
-        exit_code=$?
-
-        if [ $exit_code -ne 0 ] || [ -z "$nodes_output" ]; then
-            echo "WARNING: Could not connect to Valkey node at ${host}:${port}. Trying next..." >&2
-            continue
+        local nodes_output
+        if nodes_output=$(vk_cli "$host" "$port" CLUSTER NODES 2>/dev/null); then
+            local count
+            count=$(echo "$nodes_output" | awk '$3 ~ /master/ && $3 !~ /fail/ && $8 == "connected"' | wc -l | tr -d ' ')
+            echo "$count"
+            return 0
         fi
-
-        queried_successfully=true
-
-        running_primaries=$(echo "$nodes_output" | awk '$3 ~ /master/ && $3 !~ /fail/ && $8 == "connected"' | wc -l | tr -d ' ')
-        echo "$running_primaries"
-        return 0
     done
 
-    if [ "$queried_successfully" = false ]; then
-        echo "CRITICAL: Failed to connect to ALL specified Valkey nodes." >&2
-        return 2
-    fi
+    echo "0"
+    return 1
 }
 
-# Sets cluster-require-full-coverage to no across all reachable nodes
+# --- Recovery Operations ---
+
 enable_partial_slot_availability() {
     local endpoints=("$@")
-    local node host port res exit_code applied_count=0
+    local applied_count=0
 
-    echo "NOTICE: Enabling partial slot availability (cluster-require-full-coverage no) on reachable nodes..." >&2
+    echo "NOTICE: Enabling partial slot availability (cluster-require-full-coverage no)..." >&2
 
     for node in "${endpoints[@]}"; do
-        [ -z "$node" ] && continue
-        node=$(echo "$node" | tr -s ':')
-        host="${node%%:*}"
-        port="${node##*:}"
-        [ "$host" = "$port" ] && port="6379"
+        [[ -z "$node" ]] && continue
+        read -r host port < <(split_endpoint "$node")
 
-        res=$(valkey-cli -h "$host" -p "$port" CONFIG SET cluster-require-full-coverage no 2>&1)
-        exit_code=$?
-
-        if [ $exit_code -eq 0 ] && [[ "$res" == *"OK"* ]]; then
-            echo "SUCCESS: Set 'cluster-require-full-coverage no' on ${host}:${port}" >&2
-            ((applied_count++))
-        else
-            echo "WARNING: Failed to set full coverage on ${host}:${port}: ${res}" >&2
-        fi
-    done
-
-    echo "Partial slot availability applied to ${applied_count} node(s)." >&2
-}
-
-# Dynamically sets slot replicas to 0 by detaching all active slaves into independent masters
-# using --cluster-announce-hostname and disabling automatic replica migration
-set_cluster_replicas_to_zero() {
-    local endpoints=("$@")
-    local node host port nodes_output=""
-    local detached_count=0
-
-    # Step 1: Query CLUSTER NODES from an active node
-    for node in "${endpoints[@]}"; do
-        host="${node%%:*}"
-        port="${node##*:}"
-        [ "$host" = "$port" ] && port="6379"
-
-        nodes_output=$(valkey-cli -h "$host" -p "$port" CLUSTER NODES 2>/dev/null)
-        if [ $? -eq 0 ] && [ -n "$nodes_output" ]; then
-            break
-        fi
-    done
-
-    if [ -z "$nodes_output" ]; then
-        echo "ERROR: Could not retrieve CLUSTER NODES to set replicas to zero." >&2
-        return 1
-    fi
-
-    # Step 2: Prevent automatic replica migration across reachable nodes
-    for node in "${endpoints[@]}"; do
-        host="${node%%:*}"
-        port="${node##*:}"
-        [ "$host" = "$port" ] && port="6379"
-        valkey-cli -h "$host" -p "$port" CONFIG SET cluster-migration-barrier 9999 >/dev/null 2>&1
-    done
-
-    # Step 3: Find all connected replica/slave nodes using their announce hostnames
-    echo "NOTICE: Promoting all replicas using announce hostnames to establish 0 replicas..." >&2
-
-    local raw_addr
-    while IFS= read -r raw_addr; do
-        [ -z "$raw_addr" ] && continue
-        local target
-        target=$(resolve_endpoint_hostname "$raw_addr")
-        t_host="${target%%:*}"
-        t_port="${target##*:}"
-
-        echo "Detaching replica via announce hostname at ${t_host}:${t_port}..." >&2
-        res=$(valkey-cli -h "$t_host" -p "$t_port" CLUSTER FAILOVER TAKEOVER 2>&1)
-        if [ $? -eq 0 ] && [[ "$res" == *"OK"* ]]; then
-            echo "SUCCESS: Replica ${target} detached into master." >&2
-            ((detached_count++))
-        else
-            echo "WARNING: Failed takeover on ${target}: ${res}" >&2
-        fi
-    done < <(echo "$nodes_output" | awk '$3 ~ /slave/ && $3 !~ /fail/ && $8 == "connected" {print $2}')
-
-    echo "Slot replicas detached: ${detached_count} node(s) promoted to master." >&2
-}
-
-# Executes 'valkey-cli --cluster fix --cluster-fix-with-unreachable-primaries --cluster-yes'
-# against the first reachable alive master via its --cluster-announce-hostname
-assign_missing_slots_to_surviving_masters() {
-    local endpoints=("$@")
-    local node host port nodes_output=""
-    local target_fix_endpoint=""
-
-    # Step 1: Connect to any accessible node and read cluster topology
-    for node in "${endpoints[@]}"; do
-        host="${node%%:*}"
-        port="${node##*:}"
-        [ "$host" = "$port" ] && port="6379"
-
-        nodes_output=$(valkey-cli -h "$host" -p "$port" CLUSTER NODES 2>/dev/null)
-        if [ $? -eq 0 ] && [ -n "$nodes_output" ]; then
-            break
-        fi
-    done
-
-    if [ -z "$nodes_output" ]; then
-        echo "ERROR: Unable to retrieve CLUSTER NODES to determine cluster fix target." >&2
-        return 1
-    fi
-
-    # Step 2: Extract the first reachable healthy master using its announce hostname
-    local raw_master_addr
-    while IFS= read -r raw_master_addr; do
-        if [ -n "$raw_master_addr" ]; then
-            target_fix_endpoint=$(resolve_endpoint_hostname "$raw_master_addr")
-            break
-        fi
-    done < <(echo "$nodes_output" | awk '$3 ~ /master/ && $3 !~ /fail/ && $8 == "connected" {print $2}')
-
-    # Fallback to first reachable endpoint if no healthy master was recognized
-    if [ -z "$target_fix_endpoint" ]; then
-        for node in "${endpoints[@]}"; do
-            host="${node%%:*}"
-            port="${node##*:}"
-            [ "$host" = "$port" ] && port="6379"
-            if valkey-cli -h "$host" -p "$port" PING 2>/dev/null | grep -q PONG; then
-                target_fix_endpoint="${host}:${port}"
-                break
+        local res
+        if res=$(vk_cli "$host" "$port" CONFIG SET cluster-require-full-coverage no 2>&1); then
+            if [[ "$res" =~ OK ]]; then
+                applied_count=$((applied_count + 1))
             fi
-        done
-    fi
+        fi
+    done
 
-    if [ -z "$target_fix_endpoint" ]; then
-        echo "CRITICAL: No reachable Valkey master node found to run cluster fix!" >&2
-        return 1
-    fi
-
-    echo "Running 'valkey-cli --cluster fix' against target ${target_fix_endpoint} with unreachable primaries auto-fix..." >&2
-
-     echo "yes" | valkey-cli --cluster fix "$target_fix_endpoint" \
-        --cluster-fix-with-unreachable-primaries  \
-        --cluster-yes
-    local fix_exit_code=$?
-
-    if [ $fix_exit_code -eq 0 ]; then
-        echo "SUCCESS: Cluster fix completed successfully on ${target_fix_endpoint}." >&2
-        return 0
-    else
-        echo "ERROR: Cluster fix failed with exit code ${fix_exit_code} on ${target_fix_endpoint}." >&2
-        return $fix_exit_code
-    fi
+    echo "Applied full-coverage override to ${applied_count} node(s)." >&2
 }
 
-# Executes CLUSTER FAILOVER TAKEOVER on target endpoints, skipping nodes that are already primaries
 trigger_failover_takeover_on_replicas() {
     local target_replicas=("$@")
-
-    if [ ${#target_replicas[@]} -eq 0 ]; then
-        echo "CRITICAL: No replica endpoints provided to trigger failover." >&2
-        return 2
-    fi
-
-    local raw_endpoint clean_endpoint host port role failover_res exit_code
     local success_count=0
     local fail_count=0
-    local skipped_count=0
 
-    echo "Starting takeover execution on specified targets..." >&2
+    echo "Starting takeover execution on target replicas..." >&2
 
-    for raw_endpoint in "${target_replicas[@]}"; do
-        [ -z "$raw_endpoint" ] && continue
+    for node in "${target_replicas[@]}"; do
+        [[ -z "$node" ]] && continue
+        read -r host port < <(split_endpoint "$node")
 
-        clean_endpoint=$(echo "$raw_endpoint" | tr -s ':')
-        host="${clean_endpoint%%:*}"
-        port="${clean_endpoint##*:}"
-        [ "$host" = "$port" ] && port="6379"
+        local role
+        role=$(vk_cli "$host" "$port" INFO replication 2>/dev/null | awk -F: '/role:/ {print $2}' | tr -d '\r')
 
-        role=$(valkey-cli -h "$host" -p "$port" INFO replication 2>/dev/null | awk -F: '/role:/ {print $2}' | tr -d '\r')
+        if [[ "$role" == "master" ]]; then
+            echo "SKIP: Node ${host}:${port} is already primary." >&2
+            ((++success_count))
 
-        if [ "$role" = "master" ]; then
-            echo "SKIP: Node ${host}:${port} is already a primary (master). No takeover needed." >&2
-            ((skipped_count++))
-            ((success_count++))
             continue
-        elif [ -z "$role" ]; then
-            echo "ERROR: Unable to connect or read role from ${host}:${port}." >&2
-            ((fail_count++))
+        elif [[ -z "$role" ]]; then
+            echo "WARNING: Could not connect to ${host}:${port}." >&2
+            ((++fail_count))
             continue
         fi
 
-        echo "Issuing 'CLUSTER FAILOVER TAKEOVER' to replica at announce hostname ${host}:${port}..." >&2
-
-        failover_res=$(valkey-cli -h "$host" -p "$port" CLUSTER FAILOVER TAKEOVER 2>&1)
-        exit_code=$?
-
-        if [ $exit_code -eq 0 ] && [[ "$failover_res" == *"OK"* ]]; then
+        echo "Issuing 'CLUSTER FAILOVER TAKEOVER' on ${host}:${port}..." >&2
+        local failover_res
+        if failover_res=$(vk_cli "$host" "$port" CLUSTER FAILOVER TAKEOVER 2>&1) && [[ "$failover_res" =~ OK ]]; then
             echo "SUCCESS: Takeover initiated on ${host}:${port}." >&2
-            ((success_count++))
+            ((++success_count))
         else
-            echo "ERROR: Failed takeover on ${host}:${port}. Output: ${failover_res}" >&2
-            ((fail_count++))
+            echo "ERROR: Failed takeover on ${host}:${port}: ${failover_res}" >&2
+            ((++fail_count))
         fi
     done
 
-    echo "Takeover sequence completed. Successful: ${success_count} (Skipped/Already Master: ${skipped_count}), Failed: ${fail_count}." >&2
-
-    if [ "$fail_count" -gt 0 ]; then
-        return 1
-    fi
+    [[ $fail_count -gt 0 ]] && return 1
     return 0
 }
 
-# --- Configuration & Main Loop ---
+assign_missing_slots_to_surviving_masters() {
+    local endpoints=("$@")
+    local target_fix_endpoint=""
 
-CLUSTER_NODES_TO_CHECK=("valkey-server-7011:7011" "valkey-server-7012:7012" "valkey-server-7013:7013" "valkey-server-7014:7014" "valkey-server-7015:7015" "valkey-server-7016:7016" "valkey-server-7017:7017" "valkey-server-7018:7018" "valkey-server-7021:7021" "valkey-server-7022:7022" "valkey-server-7023:7023" "valkey-server-7024:7024" "valkey-server-7025:7025" "valkey-server-7026:7026" "valkey-server-7027:7027" "valkey-server-7028:7028")
+    for node in "${endpoints[@]}"; do
+        [[ -z "$node" ]] && continue
+        read -r host port < <(split_endpoint "$node")
 
-REPLICAS_TO_PROMOTE=("valkey-server-7014:7014" "valkey-server-7015:7015" "valkey-server-7016:7016" "valkey-server-7017:7017" "valkey-server-7018:7018" "valkey-server-7021:7021" "valkey-server-7022:7022" "valkey-server-7023:7023" "valkey-server-7024:7024" "valkey-server-7025:7025" "valkey-server-7026:7026" "valkey-server-7027:7027" "valkey-server-7028:7028")
-
-TAKEOVER_TRIES=0
-FAILED_COUNT=0
-PARTIAL_AVAILABILITY_APPLIED=false
-SLOTS_REASSIGNED=false
-REPLICAS_SET_TO_ZERO=false
-
-while true; do
-    if check_valkey_cluster "${CLUSTER_NODES_TO_CHECK[@]}"; then
-        echo "Cluster is healthy, proceeding with normal operations..."
-        TAKEOVER_TRIES=0
-        FAILED_COUNT=0
-        PARTIAL_AVAILABILITY_APPLIED=false
-        SLOTS_REASSIGNED=false
-        REPLICAS_SET_TO_ZERO=false
-    else
-        echo "Cluster check failed with exit status $?"
-
-        ((FAILED_COUNT++))
-        echo "Failed Count: $FAILED_COUNT"
-
-        PRIMARY_COUNT=$(count_valkey_running_primaries "${CLUSTER_NODES_TO_CHECK[@]}")
-        echo "Running primaries count: $PRIMARY_COUNT"
-
-        if [ "${PRIMARY_COUNT:-1}" -eq 0 ]; then
-            ((TAKEOVER_TRIES++))
-            echo "Takeover attempt #${TAKEOVER_TRIES}..."
-            trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
+        if vk_cli "$host" "$port" PING 2>/dev/null | grep -q PONG; then
+            target_fix_endpoint="${host}:${port}"
+            break
         fi
+    done
 
-        # Conditions met: Fail check greater than 3 (FAILED_COUNT > 3) and primaries less than 3
-        if [ "$FAILED_COUNT" -gt 3 ] && [ "${PRIMARY_COUNT:-1}" -lt 3 ]; then
-
-            # 1. Trigger takeover on remaining target replicas
-            ((TAKEOVER_TRIES++))
-            echo "Takeover attempt #${TAKEOVER_TRIES} due to < 3 primaries..."
-            trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
-
-            # 2. Convert all remaining replicas to independent masters (0 replicas configuration)
-            if [ "$REPLICAS_SET_TO_ZERO" = false ]; then
-                echo "Setting cluster slot replicas to 0 dynamically using announce hostnames..."
-                set_cluster_replicas_to_zero "${CLUSTER_NODES_TO_CHECK[@]}"
-                REPLICAS_SET_TO_ZERO=true
-            fi
-
-            sleep 2
-
-            # 3. Fix unassigned slots and unreachable primaries automatically
-            if [ "$SLOTS_REASSIGNED" = false ]; then
-                echo "Executing valkey-cli cluster fix with unreachable primaries..."
-                assign_missing_slots_to_surviving_masters "${CLUSTER_NODES_TO_CHECK[@]}"
-                SLOTS_REASSIGNED=true
-            fi
-        fi
+    if [[ -z "$target_fix_endpoint" ]]; then
+        echo "CRITICAL: No reachable endpoint available for cluster fix." >&2
+        return 1
     fi
 
-    echo "Sleeping 30 seconds ..."
-    sleep 30
+    echo "Running 'valkey-cli --cluster fix' via ${target_fix_endpoint}..." >&2
+
+    local cli_cmd=(valkey-cli)
+    [[ -n "$VALKEY_USER" ]] && cli_cmd+=(--user "$VALKEY_USER")
+    [[ -n "$VALKEY_PASSWORD" ]] && cli_cmd+=(-a "$VALKEY_PASSWORD")
+
+    if [[ "$VALKEY_TLS" == "true" ]]; then
+        cli_cmd+=(--tls)
+        [[ -n "$VALKEY_CACERT" ]] && cli_cmd+=(--cacert "$VALKEY_CACERT")
+        [[ -n "$VALKEY_CERT" ]] && cli_cmd+=(--cert "$VALKEY_CERT")
+        [[ -n "$VALKEY_KEY" ]] && cli_cmd+=(--key "$VALKEY_KEY")
+    fi
+
+    cli_cmd+=(--cluster fix "$target_fix_endpoint" --cluster-fix-with-unreachable-primaries --cluster-yes)
+
+    if echo "yes" | "${cli_cmd[@]}"; then
+        echo "SUCCESS: Cluster fix executed." >&2
+        return 0
+    else
+        local status=$?
+        echo "ERROR: Cluster fix failed with code ${status}." >&2
+        return $status
+    fi
+}
+
+# --- Main Watchdog Loop ---
+
+FAILED_CONSECUTIVE_COUNT=0
+HEALTHY_CONSECUTIVE_COUNT=0
+RECOVERY_STAGE=0 # 0: Normal, 1: Takeover triggered, 2: Partial availability enabled, 3: Cluster fixed
+
+echo "Valkey Cluster Watchdog started."
+echo "Monitored endpoints: ${CLUSTER_NODES_TO_CHECK[*]}"
+echo "Promotion targets: ${REPLICAS_TO_PROMOTE[*]}"
+
+while true; do
+    if check_valkey_cluster_consensus "${CLUSTER_NODES_TO_CHECK[@]}"; then
+
+
+        HEALTHY_CONSECUTIVE_COUNT=$((HEALTHY_CONSECUTIVE_COUNT + 1))
+        FAILED_CONSECUTIVE_COUNT=0
+
+        # Require 3 consecutive healthy cycles before resetting recovery state to prevent flapping
+        if [[ $HEALTHY_CONSECUTIVE_COUNT -ge 3 ]]; then
+            if [[ $RECOVERY_STAGE -ne 0 ]]; then
+                echo "Cluster confirmed stable and healthy. Resetting recovery stage."
+            fi
+            RECOVERY_STAGE=0
+        fi
+    else
+        HEALTHY_CONSECUTIVE_COUNT=0
+        FAILED_CONSECUTIVE_COUNT=$((FAILED_CONSECUTIVE_COUNT + 1))
+        echo "Cluster check failed (Consecutive failure count: ${FAILED_CONSECUTIVE_COUNT})" >&2
+
+        PRIMARY_COUNT=$(count_valkey_running_primaries "${CLUSTER_NODES_TO_CHECK[@]}")
+        echo "Active connected primaries detected: ${PRIMARY_COUNT}" >&2
+
+        # Stage 1: Initial takeover attempt when primaries are lost
+        if [[ "$PRIMARY_COUNT" -eq 0 && $RECOVERY_STAGE -lt 1 ]]; then
+            echo "Stage 1: No active primaries found. Initiating site failover takeover..." >&2
+            trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}" || true
+            RECOVERY_STAGE=1
+        fi
+
+        # Stage 2: Persistent failure after 3 failed intervals -> enable partial coverage
+        if [[ $FAILED_CONSECUTIVE_COUNT -ge 3 && $RECOVERY_STAGE -lt 2 ]]; then
+            echo "Stage 2: Cluster failed for 3+ cycles. Enabling partial slot availability..." >&2
+            enable_partial_slot_availability "${CLUSTER_NODES_TO_CHECK[@]}"
+            RECOVERY_STAGE=2
+        fi
+
+        # Stage 3: Severe failure (<3 primaries, 4+ intervals) -> reclaim and repair slots
+        if [[ $FAILED_CONSECUTIVE_COUNT -gt 3 && "$PRIMARY_COUNT" -lt 3 && $RECOVERY_STAGE -lt 3 ]]; then
+            echo "Stage 3: Cluster has insufficient primaries. Running automated cluster slot fix..." >&2
+            assign_missing_slots_to_surviving_masters "${CLUSTER_NODES_TO_CHECK[@]}" || true
+            RECOVERY_STAGE=3
+        fi
+
+    fi
+
+    echo "sleeping 15 seconds"
+    sleep 15
 done

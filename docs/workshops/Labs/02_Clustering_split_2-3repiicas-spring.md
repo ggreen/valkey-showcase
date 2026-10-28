@@ -121,9 +121,10 @@ podman exec -it valkey-server-7011 valkey-cli  -p 7011 --cluster create valkey-s
 
 
 ```shell
+podman rm -f valkey-check
 podman run --network=valkey  --rm -d --name valkey-check -v "$(pwd)/deployments/local/scripts/2-sites/split-brain-failover-detection-generic.sh:/scripts/split-brain-failover-detection-generic.sh:ro,Z" valkey/valkey:9.1
 
-podman exec -it valkey-check bash /scripts/split-brain-failover-detection-generic.sh
+podman exec -it valkey-check bash /scripts/split-brain-failover-detection-generic.sh --cluster-nodes "valkey-server-7011:7011 valkey-server-7012:7012 valkey-server-7013:7013 valkey-server-7014:7014 valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7017:7017 valkey-server-7018:7018 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026 valkey-server-7027:7027 valkey-server-7028:7028" --replicas-to-promote " valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7017:7017 valkey-server-7018:7018 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026 valkey-server-7027:7027 valkey-server-7028:7028"
 ```
 
 
