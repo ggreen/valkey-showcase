@@ -14,12 +14,16 @@ spring:
           - localhost:7014
           - localhost:7015
           - localhost:7016
+          - localhost:7017
+          - localhost:7018
           - localhost:7021
           - localhost:7022
           - localhost:7023
           - localhost:7024
           - localhost:7025
           - localhost:7026
+          - localhost:7027
+          - localhost:7028
       lettuce:
         cluster:
           refresh:

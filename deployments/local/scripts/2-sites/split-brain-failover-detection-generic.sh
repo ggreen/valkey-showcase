@@ -339,9 +339,9 @@ trigger_failover_takeover_on_replicas() {
 
 # --- Configuration & Main Loop ---
 
-CLUSTER_NODES_TO_CHECK=("valkey-server-7011:7011" "valkey-server-7012:7012" "valkey-server-7013:7013" "valkey-server-7014:7014" "valkey-server-7015:7015" "valkey-server-7016:7016" "valkey-server-7021:7021" "valkey-server-7022:7022" "valkey-server-7023:7023" "valkey-server-7024:7024" "valkey-server-7025:7025" "valkey-server-7026:7026")
+CLUSTER_NODES_TO_CHECK=("valkey-server-7011:7011" "valkey-server-7012:7012" "valkey-server-7013:7013" "valkey-server-7014:7014" "valkey-server-7015:7015" "valkey-server-7016:7016" "valkey-server-7017:7017" "valkey-server-7018:7018" "valkey-server-7021:7021" "valkey-server-7022:7022" "valkey-server-7023:7023" "valkey-server-7024:7024" "valkey-server-7025:7025" "valkey-server-7026:7026" "valkey-server-7027:7027" "valkey-server-7028:7028")
 
-REPLICAS_TO_PROMOTE=("valkey-server-7014:7014" "valkey-server-7015:7015" "valkey-server-7016:7016" "valkey-server-7021:7021" "valkey-server-7022:7022" "valkey-server-7023:7023" "valkey-server-7024:7024" "valkey-server-7025:7025" "valkey-server-7026:7026")
+REPLICAS_TO_PROMOTE=("valkey-server-7014:7014" "valkey-server-7015:7015" "valkey-server-7016:7016" "valkey-server-7017:7017" "valkey-server-7018:7018" "valkey-server-7021:7021" "valkey-server-7022:7022" "valkey-server-7023:7023" "valkey-server-7024:7024" "valkey-server-7025:7025" "valkey-server-7026:7026" "valkey-server-7027:7027" "valkey-server-7028:7028")
 
 TAKEOVER_TRIES=0
 FAILED_COUNT=0

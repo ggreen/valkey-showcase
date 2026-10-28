@@ -16,12 +16,17 @@ Add the following to /etc/hosts
 127.0.0.1    valkey-server-7014
 127.0.0.1    valkey-server-7015
 127.0.0.1    valkey-server-7016
+127.0.0.1    valkey-server-7017
+127.0.0.1    valkey-server-7018
 127.0.0.1    valkey-server-7021
 127.0.0.1    valkey-server-7022
 127.0.0.1    valkey-server-7023
 127.0.0.1    valkey-server-7024
 127.0.0.1    valkey-server-7025
 127.0.0.1    valkey-server-7026
+127.0.0.1    valkey-server-7027
+127.0.0.1    valkey-server-7028
+
 ```
 
 # Workshop 
@@ -38,10 +43,9 @@ mkdir $PWD/runtime
 
 ## 2. Start Valkey Nodes
 
-Launch 6 Valkey server containers split across two simulated sites:
+Launch Valkey server containers split across two simulated sites:
 
-- Site 1: Ports 7001–7003 
-- Site 2: Ports 7004–7006
+
 
 ```shell
 echo "Starting Site 1" 
@@ -67,6 +71,13 @@ echo "starting Node 16"
 podman run -d --rm --network=valkey -p 7016:7016 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7016 --name valkey-server-7016 valkey/valkey:9.1 valkey-server --port 7016 --cluster-announce-hostname "valkey-server-7016" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
 
 
+echo "starting Node 17"
+podman run -d --rm --network=valkey -p 7017:7017 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7017 --name valkey-server-7017 valkey/valkey:9.1 valkey-server --port 7017 --cluster-announce-hostname "valkey-server-7017" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
+
+echo "starting Node 18"
+podman run -d --rm --network=valkey -p 7018:7018 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7018 --name valkey-server-7018 valkey/valkey:9.1 valkey-server --port 7018 --cluster-announce-hostname "valkey-server-7018" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
+
+
 echo "---------------------------------------"
 
 echo "Starting Site 2"
@@ -90,6 +101,13 @@ podman run -d --rm --network=valkey -p 7025:7025 -v $PWD/runtime:/usr/local/etc/
 
 echo "starting Node 26"
 podman run -d --rm --network=valkey -p 7026:7026 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7026 --name valkey-server-7026 valkey/valkey:9.1 valkey-server --port 7026 --cluster-announce-hostname "valkey-server-7026" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
+
+echo "starting Node 27"
+podman run -d --rm --network=valkey -p 7027:7027 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7027 --name valkey-server-7027 valkey/valkey:9.1 valkey-server --port 7027 --cluster-announce-hostname "valkey-server-7027" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
+
+echo "starting Node 28"
+podman run -d --rm --network=valkey -p 7028:7028 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7028 --name valkey-server-7028 valkey/valkey:9.1 valkey-server --port 7028 --cluster-announce-hostname "valkey-server-7028" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
+
 ```
 
 
@@ -98,7 +116,7 @@ podman run -d --rm --network=valkey -p 7026:7026 -v $PWD/runtime:/usr/local/etc/
 Join the 6 individual nodes into a cluster with 1 replica per primary:
 
 ```shell
-podman exec -it valkey-server-7011 valkey-cli  -p 7011 --cluster create valkey-server-7011:7011 valkey-server-7012:7012 valkey-server-7013:7013 valkey-server-7014:7014 valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026  --cluster-replicas 3 --cluster-yes
+podman exec -it valkey-server-7011 valkey-cli  -p 7011 --cluster create valkey-server-7011:7011 valkey-server-7012:7012 valkey-server-7013:7013 valkey-server-7014:7014 valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7017:7017 valkey-server-7018:7018 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026 valkey-server-7027:7027 valkey-server-7028:7028  --cluster-replicas 3 --cluster-yes
 ```
 
 
@@ -168,6 +186,10 @@ podman rm  -f valkey-server-7012
 podman rm  -f valkey-server-7013
 ```
 
+```shell
+podman rm  -f valkey-server-7014
+```
+
 
 View Cluster Details (state=0k)
 
@@ -184,10 +206,10 @@ CLUSTER NODES
 
 Force-Crash Site 2
 
-Simulate a complete outage of Site 2 by abruptly stopping its container. This resist in only 3 nodes remaining.
+Simulate a complete outage of Site 2 by abruptly stopping its container. This will leave 4 nodes available. 
 
 ```shell
-podman rm  -f valkey-server-7021 valkey-server-7022 valkey-server-7023 valkey-server-7024 valkey-server-7025 valkey-server-7026
+podman rm  -f valkey-server-7021 valkey-server-7022 valkey-server-7023 valkey-server-7024 valkey-server-7025 valkey-server-7026 valkey-server-7027 valkey-server-7028
  ```
 
 Note: script get Internal Server
@@ -221,12 +243,17 @@ podman rm -f valkey-server-7013
 podman rm -f valkey-server-7014
 podman rm -f valkey-server-7015
 podman rm -f valkey-server-7016
+podman rm -f valkey-server-7017
+podman rm -f valkey-server-7018
 podman rm -f valkey-server-7021
 podman rm -f valkey-server-7022
 podman rm -f valkey-server-7023
 podman rm -f valkey-server-7024
 podman rm -f valkey-server-7025
 podman rm -f valkey-server-7026
+podman rm -f valkey-server-7027
+podman rm -f valkey-server-7028
+podman rm -f valkey-check
 
 ```
 
