@@ -5,7 +5,7 @@ A hands-on workshop guide for deploying a 16-node multi-site Valkey cluster usin
 ![img_1.png](img_1.png)
 
 
-The activity simulates a site failure.  The [split brain failover detection script](deployments/local/scripts/2-sites/valkey-cluster-auto-heal.sh) automates promoting replicas in site 2, if all the primaries are down.
+The activity simulates a site failure.  The [split brain failover detection script](https://github.com/ggreen/valkey-showcase/blob/main/deployments/local/scripts/2-sites/valkey-cluster-auto-heal.sh) automates promoting replicas in site 2, if all the primaries are down.
 
 
 # 1. Prerequisites
