@@ -4,7 +4,29 @@
 # Split brain, where all primaries in site 1 are down.
 # The script will issue a cluster failover takeover in site 2,
 # enable partial slot availability if the cluster remains failed after 3 tries,
-# and assign all missing slots directly via CLUSTER ADDSLOTS across surviving masters using announce hostnames.
+# reduce slot replicas to 0 (detaching all slaves to independent masters),
+# and automatically repair missing/unassigned slots via 'valkey-cli --cluster fix --cluster-fix-with-unreachable-primaries --cluster-yes'.
+# All operations consistently use --cluster-announce-hostname.
+
+# Helper: Resolves the --cluster-announce-hostname and port from CLUSTER NODES column 2
+# Input format: <ip>:<port>@<cport>[,<hostname>]
+resolve_endpoint_hostname() {
+    local raw_addr="$1"
+    local hostname=""
+    local port=""
+
+    if [[ "$raw_addr" == *","* ]]; then
+        hostname="${raw_addr##*,}"
+        local before_comma="${raw_addr%%,*}"
+        local ip_port="${before_comma%%@*}"
+        port="${ip_port##*:}"
+        echo "${hostname}:${port}"
+    else
+        # Fallback to IP:port if no announce hostname is configured on the node
+        local ip_port="${raw_addr%%@*}"
+        echo "$ip_port"
+    fi
+}
 
 # Checks overall cluster state via CLUSTER INFO across multiple host:port endpoints
 check_valkey_cluster() {
@@ -133,12 +155,68 @@ enable_partial_slot_availability() {
     echo "Partial slot availability applied to ${applied_count} node(s)." >&2
 }
 
-# Identifies all missing/uncovered slots (0-16383) and assigns them via CLUSTER ADDSLOTS
-# using the --cluster-announce-hostname of the surviving masters, followed by CLUSTER BUMPEPOCH
+# Dynamically sets slot replicas to 0 by detaching all active slaves into independent masters
+# using --cluster-announce-hostname and disabling automatic replica migration
+set_cluster_replicas_to_zero() {
+    local endpoints=("$@")
+    local node host port nodes_output=""
+    local detached_count=0
+
+    # Step 1: Query CLUSTER NODES from an active node
+    for node in "${endpoints[@]}"; do
+        host="${node%%:*}"
+        port="${node##*:}"
+        [ "$host" = "$port" ] && port="6379"
+
+        nodes_output=$(valkey-cli -h "$host" -p "$port" CLUSTER NODES 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$nodes_output" ]; then
+            break
+        fi
+    done
+
+    if [ -z "$nodes_output" ]; then
+        echo "ERROR: Could not retrieve CLUSTER NODES to set replicas to zero." >&2
+        return 1
+    fi
+
+    # Step 2: Prevent automatic replica migration across reachable nodes
+    for node in "${endpoints[@]}"; do
+        host="${node%%:*}"
+        port="${node##*:}"
+        [ "$host" = "$port" ] && port="6379"
+        valkey-cli -h "$host" -p "$port" CONFIG SET cluster-migration-barrier 9999 >/dev/null 2>&1
+    done
+
+    # Step 3: Find all connected replica/slave nodes using their announce hostnames
+    echo "NOTICE: Promoting all replicas using announce hostnames to establish 0 replicas..." >&2
+
+    local raw_addr
+    while IFS= read -r raw_addr; do
+        [ -z "$raw_addr" ] && continue
+        local target
+        target=$(resolve_endpoint_hostname "$raw_addr")
+        t_host="${target%%:*}"
+        t_port="${target##*:}"
+
+        echo "Detaching replica via announce hostname at ${t_host}:${t_port}..." >&2
+        res=$(valkey-cli -h "$t_host" -p "$t_port" CLUSTER FAILOVER TAKEOVER 2>&1)
+        if [ $? -eq 0 ] && [[ "$res" == *"OK"* ]]; then
+            echo "SUCCESS: Replica ${target} detached into master." >&2
+            ((detached_count++))
+        else
+            echo "WARNING: Failed takeover on ${target}: ${res}" >&2
+        fi
+    done < <(echo "$nodes_output" | awk '$3 ~ /slave/ && $3 !~ /fail/ && $8 == "connected" {print $2}')
+
+    echo "Slot replicas detached: ${detached_count} node(s) promoted to master." >&2
+}
+
+# Executes 'valkey-cli --cluster fix --cluster-fix-with-unreachable-primaries --cluster-yes'
+# against the first reachable alive master via its --cluster-announce-hostname
 assign_missing_slots_to_surviving_masters() {
     local endpoints=("$@")
     local node host port nodes_output=""
-    local healthy_masters=()
+    local target_fix_endpoint=""
 
     # Step 1: Connect to any accessible node and read cluster topology
     for node in "${endpoints[@]}"; do
@@ -153,127 +231,51 @@ assign_missing_slots_to_surviving_masters() {
     done
 
     if [ -z "$nodes_output" ]; then
-        echo "ERROR: Unable to retrieve CLUSTER NODES from any endpoint." >&2
+        echo "ERROR: Unable to retrieve CLUSTER NODES to determine cluster fix target." >&2
         return 1
     fi
 
-    # Step 2: Extract reachable healthy master host:port endpoints using announce hostname
-    # Format of field 2: <ip>:<port>@<cport>[,<hostname>]
-    while IFS= read -r ep; do
-        [ -n "$ep" ] && healthy_masters+=("$ep")
-    done < <(echo "$nodes_output" | awk '$3 ~ /master/ && $3 !~ /fail/ && $8 == "connected" {
-        addr = $2
+    # Step 2: Extract the first reachable healthy master using its announce hostname
+    local raw_master_addr
+    while IFS= read -r raw_master_addr; do
+        if [ -n "$raw_master_addr" ]; then
+            target_fix_endpoint=$(resolve_endpoint_hostname "$raw_master_addr")
+            break
+        fi
+    done < <(echo "$nodes_output" | awk '$3 ~ /master/ && $3 !~ /fail/ && $8 == "connected" {print $2}')
 
-        # Check if an announce hostname is present after a comma
-        if (index(addr, ",") > 0) {
-            split(addr, parts, ",")
-            hostname = parts[2]
-
-            # Extract port from IP:PORT@CPORT
-            split(parts[1], ipparts, "@")
-            split(ipparts[1], hp, ":")
-            port = hp[2]
-
-            print hostname ":" port
-        } else {
-            # Fallback to IP address if no announce hostname was configured
-            sub(/@.*/, "", addr)
-            print addr
-        }
-    }')
-
-    if [ ${#healthy_masters[@]} -eq 0 ]; then
-        echo "CRITICAL: No healthy master nodes available to adopt missing slots!" >&2
-        return 1
-    fi
-
-    echo "Found ${#healthy_masters[@]} healthy master target(s): ${healthy_masters[*]}" >&2
-
-    # Step 3: Scan slots 0-16383. Only slots served by healthy masters are considered covered.
-    local missing_slots=()
-    while IFS= read -r s; do
-        [ -n "$s" ] && missing_slots+=("$s")
-    done < <(echo "$nodes_output" | awk '
-    BEGIN {
-        for (i = 0; i <= 16383; i++) slot[i] = 0;
-    }
-    $3 ~ /master/ && $3 !~ /fail/ && $8 == "connected" {
-        for (i = 9; i <= NF; i++) {
-            if ($i ~ /^\[/) continue; # Ignore migrating/importing markers
-            if ($i ~ /^[0-9]+-[0-9]+$/) {
-                split($i, bounds, "-")
-                for (s = bounds[1]; s <= bounds[2]; s++) slot[s] = 1;
-            } else if ($i ~ /^[0-9]+$/) {
-                slot[$i] = 1;
-            }
-        }
-    }
-    END {
-        for (i = 0; i <= 16383; i++) {
-            if (slot[i] == 0) print i;
-        }
-    }')
-
-    local total_missing=${#missing_slots[@]}
-    if [ "$total_missing" -eq 0 ]; then
-        echo "No missing slots found. All 16,384 slots are covered by active masters." >&2
-        return 0
-    fi
-
-    echo "Found ${total_missing} missing slot(s). Distributing via CLUSTER ADDSLOTS using announce hostnames..." >&2
-
-    # Step 4: Distribute missing slots evenly across healthy masters using CLUSTER ADDSLOTS
-    local num_masters=${#healthy_masters[@]}
-    local slots_per_master=$(( (total_missing + num_masters - 1) / num_masters ))
-    local BATCH_SIZE=500
-
-    local current_idx=0
-    for ((m = 0; m < num_masters; m++)); do
-        local target="${healthy_masters[$m]}"
-        local t_host="${target%%:*}"
-        local t_port="${target##*:}"
-
-        local assigned_count=0
-        local batch=()
-
-        while [ $assigned_count -lt $slots_per_master ] && [ $current_idx -lt $total_missing ]; do
-            batch+=("${missing_slots[$current_idx]}")
-            ((current_idx++))
-            ((assigned_count++))
-
-            # Dispatch when reaching BATCH_SIZE
-            if [ ${#batch[@]} -ge $BATCH_SIZE ]; then
-                local res
-                res=$(valkey-cli -h "$t_host" -p "$t_port" CLUSTER ADDSLOTS "${batch[@]}" 2>&1)
-                if [ $? -ne 0 ]; then
-                    echo "WARNING: Failed to run CLUSTER ADDSLOTS batch on ${target}: ${res}" >&2
-                fi
-                batch=()
+    # Fallback to first reachable endpoint if no healthy master was recognized
+    if [ -z "$target_fix_endpoint" ]; then
+        for node in "${endpoints[@]}"; do
+            host="${node%%:*}"
+            port="${node##*:}"
+            [ "$host" = "$port" ] && port="6379"
+            if valkey-cli -h "$host" -p "$port" PING 2>/dev/null | grep -q PONG; then
+                target_fix_endpoint="${host}:${port}"
+                break
             fi
         done
+    fi
 
-        # Dispatch any remaining slots in this master's share
-        if [ ${#batch[@]} -gt 0 ]; then
-            local res
-            res=$(valkey-cli -h "$t_host" -p "$t_port" CLUSTER ADDSLOTS "${batch[@]}" 2>&1)
-            if [ $? -ne 0 ]; then
-                echo "WARNING: Failed to run CLUSTER ADDSLOTS batch on ${target}: ${res}" >&2
-            fi
-        fi
+    if [ -z "$target_fix_endpoint" ]; then
+        echo "CRITICAL: No reachable Valkey master node found to run cluster fix!" >&2
+        return 1
+    fi
 
-        echo "Issued CLUSTER ADDSLOTS for ${assigned_count} slot(s) to announce hostname ${target}." >&2
+    echo "Running 'valkey-cli --cluster fix' against target ${target_fix_endpoint} with unreachable primaries auto-fix..." >&2
 
-        # Step 5: Bump epoch to ensure other nodes honor this master's new slot ownership
-        if [ $assigned_count -gt 0 ]; then
-            local bump_res
-            bump_res=$(valkey-cli -h "$t_host" -p "$t_port" CLUSTER BUMPEPOCH 2>&1)
-            echo "BUMPEPOCH on ${target}: ${bump_res}" >&2
-        fi
+     echo "yes" | valkey-cli --cluster fix "$target_fix_endpoint" \
+        --cluster-fix-with-unreachable-primaries  \
+        --cluster-yes
+    local fix_exit_code=$?
 
-        [ $current_idx -ge $total_missing ] && break
-    done
-
-    echo "Finished assigning missing slots and bumping epochs." >&2
+    if [ $fix_exit_code -eq 0 ]; then
+        echo "SUCCESS: Cluster fix completed successfully on ${target_fix_endpoint}." >&2
+        return 0
+    else
+        echo "ERROR: Cluster fix failed with exit code ${fix_exit_code} on ${target_fix_endpoint}." >&2
+        return $fix_exit_code
+    fi
 }
 
 # Executes CLUSTER FAILOVER TAKEOVER on target endpoints, skipping nodes that are already primaries
@@ -313,7 +315,7 @@ trigger_failover_takeover_on_replicas() {
             continue
         fi
 
-        echo "Issuing 'CLUSTER FAILOVER TAKEOVER' to replica at ${host}:${port}..." >&2
+        echo "Issuing 'CLUSTER FAILOVER TAKEOVER' to replica at announce hostname ${host}:${port}..." >&2
 
         failover_res=$(valkey-cli -h "$host" -p "$port" CLUSTER FAILOVER TAKEOVER 2>&1)
         exit_code=$?
@@ -345,6 +347,7 @@ TAKEOVER_TRIES=0
 FAILED_COUNT=0
 PARTIAL_AVAILABILITY_APPLIED=false
 SLOTS_REASSIGNED=false
+REPLICAS_SET_TO_ZERO=false
 
 while true; do
     if check_valkey_cluster "${CLUSTER_NODES_TO_CHECK[@]}"; then
@@ -353,6 +356,7 @@ while true; do
         FAILED_COUNT=0
         PARTIAL_AVAILABILITY_APPLIED=false
         SLOTS_REASSIGNED=false
+        REPLICAS_SET_TO_ZERO=false
     else
         echo "Cluster check failed with exit status $?"
 
@@ -368,21 +372,26 @@ while true; do
             trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
         fi
 
-        # After 3 failed attempts:
-        # 1. Trigger takeover if masters count is below quorum/expected threshold
-        # 2. Add missing slots to active masters so all 16,384 slots are claimed
-        if [ "$FAILED_COUNT" -ge 3 ]; then
+        # Conditions met: Fail check greater than 3 (FAILED_COUNT > 3) and primaries less than 3
+        if [ "$FAILED_COUNT" -gt 3 ] && [ "${PRIMARY_COUNT:-1}" -lt 3 ]; then
 
-            if [ "${PRIMARY_COUNT:-1}" -lt 3 ]; then
-                ((TAKEOVER_TRIES++))
-                echo "Takeover attempt #${TAKEOVER_TRIES}..."
-                trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
+            # 1. Trigger takeover on remaining target replicas
+            ((TAKEOVER_TRIES++))
+            echo "Takeover attempt #${TAKEOVER_TRIES} due to < 3 primaries..."
+            trigger_failover_takeover_on_replicas "${REPLICAS_TO_PROMOTE[@]}"
+
+            # 2. Convert all remaining replicas to independent masters (0 replicas configuration)
+            if [ "$REPLICAS_SET_TO_ZERO" = false ]; then
+                echo "Setting cluster slot replicas to 0 dynamically using announce hostnames..."
+                set_cluster_replicas_to_zero "${CLUSTER_NODES_TO_CHECK[@]}"
+                REPLICAS_SET_TO_ZERO=true
             fi
 
             sleep 2
 
+            # 3. Fix unassigned slots and unreachable primaries automatically
             if [ "$SLOTS_REASSIGNED" = false ]; then
-                echo "Assigning missing slots to online masters via CLUSTER ADDSLOTS..."
+                echo "Executing valkey-cli cluster fix with unreachable primaries..."
                 assign_missing_slots_to_surviving_masters "${CLUSTER_NODES_TO_CHECK[@]}"
                 SLOTS_REASSIGNED=true
             fi
