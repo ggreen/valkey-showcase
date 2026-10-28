@@ -4,6 +4,10 @@ A hands-on workshop guide for deploying a 16-node multi-site Valkey cluster usin
 
 ![img_1.png](img_1.png)
 
+
+The activity simulates a site failure.  The [split brain failover detection script](deployments/local/scripts/2-sites/valkey-cluster-auto-heal.sh) automates promoting replicas in site 2, if all the primaries are down.
+
+
 # 1. Prerequisites
 
 Ensure your system meets the following requirements before starting:
@@ -33,7 +37,6 @@ Append the following host mappings to /etc/hosts (requires sudo):
 127.0.0.1    valkey-server-7026
 127.0.0.1    valkey-server-7027
 127.0.0.1    valkey-server-7028
-
 ```
 
 # 2. Environment Preparation 
