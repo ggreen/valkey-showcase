@@ -90,8 +90,6 @@ podman run -d --rm --network=valkey -p 7025:7025 -v $PWD/runtime:/usr/local/etc/
 
 echo "starting Node 26"
 podman run -d --rm --network=valkey -p 7026:7026 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7026 --name valkey-server-7026 valkey/valkey:9.1 valkey-server --port 7026 --cluster-announce-hostname "valkey-server-7026" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-
 ```
 
 
@@ -101,6 +99,13 @@ Join the 6 individual nodes into a cluster with 1 replica per primary:
 
 ```shell
 podman exec -it valkey-server-7011 valkey-cli  -p 7011 --cluster create valkey-server-7011:7011 valkey-server-7012:7012 valkey-server-7013:7013 valkey-server-7014:7014 valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026  --cluster-replicas 3 --cluster-yes
+```
+
+
+```shell
+podman run --network=valkey  --rm -d --name valkey-check -v "$(pwd)/deployments/local/scripts/2-sites/split-brain-failover-detection-generic.sh:/scripts/split-brain-failover-detection-generic.sh:ro,Z" valkey/valkey:9.1
+
+podman exec -it valkey-check bash /scripts/split-brain-failover-detection-generic.sh
 ```
 
 
@@ -142,12 +147,6 @@ View Cluster Details
 CLUSTER INFO
 ```
 
-Start script to monitor Cluster Status
-
-```shell
-deployments/local/scripts/2-sites/split-brain-failover-detection-generic.sh
-```
-
 
 ## 6. Simulate Site Failure & Failover
 
@@ -185,7 +184,7 @@ CLUSTER NODES
 
 Force-Crash Site 2
 
-Simulate a complete outage of Site 2 by abruptly stopping its containers:
+Simulate a complete outage of Site 2 by abruptly stopping its container. This resist in only 3 nodes remaining.
 
 ```shell
 podman rm  -f valkey-server-7021 valkey-server-7022 valkey-server-7023 valkey-server-7024 valkey-server-7025 valkey-server-7026
@@ -199,69 +198,16 @@ Example Errors
     {"timestamp":"2026-08-12T20:12:31.481+00:00","status":500,"error":"Internal Server Error","path":"/customers/03"}
 
 
-Execute Manual Failover
 
-Promote the Site 2 replicas to primaries using TAKEOVER:
+Note the detection script will eventual fix the cluster after 3 detected failures.
 
 ```shell
 ./deployments/local/scripts/2-sites/split-brain-failover-detection.sh
 ```
 
-**Verify Cluster Recovery**
+View will be data loss in this scenario.
 
-Check that all active nodes now reflect updated primary statuses:
-
-```shell
-podman exec -it valkey-site2-server-1 valkey-cli -p 7004 -h valkey-site2-server-1 cluster nodes
-```
-
-
-```shell
-podman exec -it valkey-site2-server-1 valkey-cli -p 7004
-```
-
-
-
-Note: Spring Application should now auto-recover with no data loss
-
-
-    Getting customer 11...
-
-```json
-    {"id":"11","first_name":"Jill11","last_name":"Smith","email":"jsmith11@cloudNativeData.io"}
-```
-    Getting customer 12...
-
-
-**Application Configuration Notes**
-
-For dynamic recovery to work seamlessly during cluster updates, ensure application.yml configures adaptive topology refreshing in Lettuce:
-
-
-```yaml
-spring:
-  data:
-    redis:
-      # Enable cluster mode and specify node endpoints
-      cluster:
-        nodes:
-          - localhost:7001
-          - localhost:7002
-          - localhost:7003
-          - localhost:7004
-          - localhost:7005
-          - localhost:7006
-      lettuce:
-        cluster:
-          refresh:
-            # Re-fetches the cluster state when errors occur
-            adaptive: true
-            # Periodically re-fetches cluster topology to ensure it stays up to date
-            period: 30s
-      # Connection timeouts
-      connect-timeout: 3000ms
-      timeout: 3000ms
-```
+![img.png](img.png)
 
 -------------------
 
@@ -282,6 +228,5 @@ podman rm -f valkey-server-7024
 podman rm -f valkey-server-7025
 podman rm -f valkey-server-7026
 
-rm runtime/*.conf
 ```
 
