@@ -1,13 +1,20 @@
 # Valkey 2-Site Cluster Setup & Failover Simulation
 
+A hands-on workshop guide for deploying a 16-node multi-site Valkey cluster using Podman, testing cross-site application failover, and diagnosing split-brain scenarios.
 
-## Prerequisites
+![img_1.png](img_1.png)
+
+# 1. Prerequisites
+
+Ensure your system meets the following requirements before starting:
 
 - Podman installed and running 
 - Java 17+ runtime installed 
 - Pre-built application JAR at applications/customer-service/target/customer-service-0.0.1-SNAPSHOT.jar
 
-Add the following to /etc/hosts
+### Local DNS Configuration
+
+Append the following host mappings to /etc/hosts (requires sudo):
 
 ```text
 127.0.0.1    valkey-server-7011
@@ -29,15 +36,12 @@ Add the following to /etc/hosts
 
 ```
 
-# Workshop 
+# 2. Environment Preparation 
 
-## 1. Environment Preparation
-   Create a dedicated Podman network and a local directory for runtime data:
+Create an isolated Podman bridge network and runtime directories for node persistence:
 
 ```shell
 podman  network  create valkey
-
-mkdir $PWD/runtime
 ```
 
 
@@ -45,69 +49,38 @@ mkdir $PWD/runtime
 
 Launch Valkey server containers split across two simulated sites:
 
-
-
 ```shell
-echo "Starting Site 1" 
+# Launch Site 1 (Ports 7011 - 7018)
+echo "Starting Site 1 nodes..."
+for port in {7011..7018}; do
+  podman run -d --rm \
+    --network=valkey \
+    -p ${port}:${port} \
+    --hostname "valkey-server-${port}" \
+    --name "valkey-server-${port}" \
+    valkey/valkey:9.1 \
+    valkey-server \
+      --port ${port} \
+      --cluster-announce-hostname "valkey-server-${port}" \
+      --cluster-preferred-endpoint-type hostname \
+      --cluster-enabled yes
+done
 
-echo "starting Node 11"
-
-podman run -d --rm --network=valkey -p 7011:7011 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-11 --name valkey-server-7011   valkey/valkey:9.1 valkey-server --port 7011 --cluster-announce-hostname "valkey-server-7011" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-
-echo "starting Node 12"
-podman run -d --rm --network=valkey -p 7012:7012 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7012 --name valkey-server-7012 valkey/valkey:9.1 valkey-server --port 7012 --cluster-announce-hostname "valkey-server-7012" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 13"
-podman run -d --rm --network=valkey -p 7013:7013 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7013 --name valkey-server-7013 valkey/valkey:9.1 valkey-server --port 7013 --cluster-announce-hostname "valkey-server-7013" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 14"
-podman run -d --rm --network=valkey -p 7014:7014 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7014 --name valkey-server-7014 valkey/valkey:9.1 valkey-server --port 7014 --cluster-announce-hostname "valkey-server-7014" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 15"
-podman run -d --rm --network=valkey -p 7015:7015 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7015 --name valkey-server-7015 valkey/valkey:9.1 valkey-server --port 7015 --cluster-announce-hostname "valkey-server-7015" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 16"
-podman run -d --rm --network=valkey -p 7016:7016 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7016 --name valkey-server-7016 valkey/valkey:9.1 valkey-server --port 7016 --cluster-announce-hostname "valkey-server-7016" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-
-echo "starting Node 17"
-podman run -d --rm --network=valkey -p 7017:7017 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7017 --name valkey-server-7017 valkey/valkey:9.1 valkey-server --port 7017 --cluster-announce-hostname "valkey-server-7017" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 18"
-podman run -d --rm --network=valkey -p 7018:7018 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7018 --name valkey-server-7018 valkey/valkey:9.1 valkey-server --port 7018 --cluster-announce-hostname "valkey-server-7018" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-
-echo "---------------------------------------"
-
-echo "Starting Site 2"
-
-echo "starting Node 21"
-
-podman run -d --rm --network=valkey -p 7021:7021 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7021 --name valkey-server-7021   valkey/valkey:9.1 valkey-server --port 7021 --cluster-announce-hostname "valkey-server-7021" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-
-echo "starting Node 22"
-podman run -d --rm --network=valkey -p 7022:7022 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7022 --name valkey-server-7022 valkey/valkey:9.1 valkey-server --port 7022 --cluster-announce-hostname "valkey-server-7022" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 23"
-podman run -d --rm --network=valkey -p 7023:7023 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7023 --name valkey-server-7023 valkey/valkey:9.1 valkey-server --port 7023 --cluster-announce-hostname "valkey-server-7023" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 24"
-podman run -d --rm --network=valkey -p 7024:7024 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7024 --name valkey-server-7024 valkey/valkey:9.1 valkey-server --port 7024 --cluster-announce-hostname "valkey-server-7024" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 25"
-podman run -d --rm --network=valkey -p 7025:7025 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7025 --name valkey-server-7025 valkey/valkey:9.1 valkey-server --port 7025 --cluster-announce-hostname "valkey-server-7025" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 26"
-podman run -d --rm --network=valkey -p 7026:7026 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7026 --name valkey-server-7026 valkey/valkey:9.1 valkey-server --port 7026 --cluster-announce-hostname "valkey-server-7026" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 27"
-podman run -d --rm --network=valkey -p 7027:7027 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7027 --name valkey-server-7027 valkey/valkey:9.1 valkey-server --port 7027 --cluster-announce-hostname "valkey-server-7027" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
-echo "starting Node 28"
-podman run -d --rm --network=valkey -p 7028:7028 -v $PWD/runtime:/usr/local/etc/valkey-runtime --hostname valkey-server-7028 --name valkey-server-7028 valkey/valkey:9.1 valkey-server --port 7028 --cluster-announce-hostname "valkey-server-7028" --cluster-preferred-endpoint-type hostname --cluster-enabled yes
-
+# Launch Site 2 (Ports 7021 - 7028)
+echo "Starting Site 2 nodes..."
+for port in {7021..7028}; do
+  podman run -d --rm \
+    --network=valkey \
+    -p ${port}:${port} \
+    --hostname "valkey-server-${port}" \
+    --name "valkey-server-${port}" \
+    valkey/valkey:9.1 \
+    valkey-server \
+      --port ${port} \
+      --cluster-announce-hostname "valkey-server-${port}" \
+      --cluster-preferred-endpoint-type hostname \
+      --cluster-enabled yes
+done
 ```
 
 
@@ -120,26 +93,32 @@ podman exec -it valkey-server-7011 valkey-cli  -p 7011 --cluster create valkey-s
 ```
 
 
+### Run Auto-Heal Promotion Helper
+
+Run the auto-heal watcher container to enforce rack/site replica topology and promotions:
+
+
 ```shell
 podman rm -f valkey-check
-podman run --network=valkey  --rm -d --name valkey-check -v "$(pwd)/deployments/local/scripts/2-sites/split-brain-failover-detection-generic.sh:/scripts/split-brain-failover-detection-generic.sh:ro,Z" valkey/valkey:9.1
+podman run --network=valkey  --rm -d --name valkey-check -v "$(pwd)/deployments/local/scripts/2-sites/valkey-cluster-auto-heal.sh:/scripts/valkey-cluster-auto-heal.sh:ro,Z" valkey/valkey:9.1
 
-podman exec -it valkey-check bash /scripts/split-brain-failover-detection-generic.sh --cluster-nodes "valkey-server-7011:7011 valkey-server-7012:7012 valkey-server-7013:7013 valkey-server-7014:7014 valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7017:7017 valkey-server-7018:7018 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026 valkey-server-7027:7027 valkey-server-7028:7028" --replicas-to-promote " valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7017:7017 valkey-server-7018:7018 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026 valkey-server-7027:7027 valkey-server-7028:7028"
+podman exec -it valkey-check bash /scripts/valkey-cluster-auto-heal.sh --cluster-nodes "valkey-server-7011:7011 valkey-server-7012:7012 valkey-server-7013:7013 valkey-server-7014:7014 valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7017:7017 valkey-server-7018:7018 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026 valkey-server-7027:7027 valkey-server-7028:7028" --replicas-to-promote " valkey-server-7015:7015 valkey-server-7016:7016 valkey-server-7017:7017 valkey-server-7018:7018 valkey-server-7021:7021 valkey-server-7022:7022 valkey-server-7023:7023 valkey-server-7024:7024 valkey-server-7025:7025 valkey-server-7026:7026 valkey-server-7027:7027 valkey-server-7028:7028"
 ```
 
 
-## 4. Run the Application & Load Test
+## 4. Run Application & Workload Generation
 
-Start Spring Boot Service
-In a new terminal window, launch the application using the clustering profile:
+**Terminal 1: Launch Customer Service**
+Start the Spring Boot microservice using the 3-replica cluster profile:
 
 ```shell
 java -jar applications/customer-service/target/customer-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=3replics --server.port=8070
 ```
 
 
-Start Test Loop
-In your main terminal, execute the test script to continuously perform read/write events:
+**Terminal 2: Run Workload Loop**
+
+Run the continuous read/write load test to observe cluster behaviour during disruptions:
 
 ```shell
 ./deployments/local/scripts/user-loop-test.sh
@@ -148,72 +127,58 @@ In your main terminal, execute the test script to continuously perform read/writ
 
 ## 5. Inspect Cluster Health
 
-Connect to a cluster node and run diagnostic commands:
+Open an interactive valkey-cli session in cluster mode (-c):
 
 
 ```shell
 podman exec -it valkey-server-7016 valkey-cli -c -p 7016 -h 127.0.0.1
 ```
-Inside the valkey-cli prompt:
+From inside the CLI, inspect cluster status and primary/replica role assignments:
 
 ```shell
 CLUSTER NODES
-```
-
-View Cluster Details 
-
-```shell
 CLUSTER INFO
 ```
+
+Confirm that cluster_state:ok and all 16,384 hash slots are assigned across primaries.
 
 
 ## 6. Simulate Site Failure & Failover
 
 
-Partial Failure Site
+Phase A: Partial Failure (Site 1 Primaries)
 
-Simulate a complete outage of Site 1 by abruptly stopping its containers:
+Simulate an failures of the first 4 nodes on Site 1:
 
 ```shell
 podman rm  -f valkey-server-7011
-```
-
-```shell
+sleep 10
 podman rm  -f valkey-server-7012
-```
-
-
-```shell
+sleep 10
 podman rm  -f valkey-server-7013
-```
-
-```shell
+sleep 10
 podman rm  -f valkey-server-7014
 ```
 
 
-View Cluster Details (state=0k)
+View Cluster Details 
+
+
+The auto heal will eventually maintain a cluster (state=0k)
 
 ```shell
-CLUSTER INFO
-```
-
-Verify new locations of primaries
-
-```shell
-CLUSTER NODES
+podman exec -it valkey-server-7016 valkey-cli -p 7016 cluster info | grep cluster_state
 ```
 
 
-Force-Crash Site 2
-
-Simulate a complete outage of Site 2 by abruptly stopping its container. This will leave 4 nodes available. 
+**Phase B: Catastrophic Outage (Site 2 Complete Loss)**
+Stop all nodes in Site 2 simultaneously. Only 4 nodes will remain active in Site 1:
 
 ```shell
-podman rm  -f valkey-server-7021 valkey-server-7022 valkey-server-7023 valkey-server-7024 valkey-server-7025 valkey-server-7026 valkey-server-7027 valkey-server-7028
+podman rm -f valkey-server-702{1..8}
  ```
 
-Note: script get Internal Server
+ecause quorum is lost, the client test script will encounter HTTP 500 errors as hash slots become unavailable:
 
 Example Errors
 
@@ -222,13 +187,9 @@ Example Errors
 
 
 
-Note the detection script will eventual fix the cluster after 3 detected failures.
+Execute the split-brain failover detection script to recover the surviving majority after 3 failed detections:
 
-```shell
-./deployments/local/scripts/2-sites/split-brain-failover-detection.sh
-```
-
-View will be data loss in this scenario.
+> Warning: Forced failover in a partitioned network may result in un-replicated data loss between the old primaries and promoted replicas.
 
 ![img.png](img.png)
 
@@ -238,23 +199,7 @@ View will be data loss in this scenario.
    To teardown containers and remove generated configuration/runtime files:
 
 ```shell
-podman rm -f valkey-server-7011
-podman rm -f valkey-server-7012
-podman rm -f valkey-server-7013
-podman rm -f valkey-server-7014
-podman rm -f valkey-server-7015
-podman rm -f valkey-server-7016
-podman rm -f valkey-server-7017
-podman rm -f valkey-server-7018
-podman rm -f valkey-server-7021
-podman rm -f valkey-server-7022
-podman rm -f valkey-server-7023
-podman rm -f valkey-server-7024
-podman rm -f valkey-server-7025
-podman rm -f valkey-server-7026
-podman rm -f valkey-server-7027
-podman rm -f valkey-server-7028
-podman rm -f valkey-check
-
+# Stop and remove all workshop containers
+podman rm -f valkey-check $(podman ps -aq --filter "name=valkey-server-70*") 2>/dev/null || true
 ```
 
